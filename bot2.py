@@ -37,7 +37,7 @@ warnings.filterwarnings('ignore')
 # CONFIGURATIONS
 # ================================================================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN") 
-ADMIN_IDS = [6876395516, 7199272008]  # Add your admin IDs here
+ADMIN_IDS = [7212602902]  # Add your admin IDs here
 
 CASH_TO_ADD = 50_000_000  # 50 Million Max Cash
 
