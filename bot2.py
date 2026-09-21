@@ -154,18 +154,33 @@ class Crypto:
 
 def gen_device_id(): return MARKO_DEVICE_PREFIX + ''.join(random.choice('0123456789abcdef') for _ in range(28))
 
-def unity_headers(token):
+# Missed Phoenix Headers Added Back!
+def phoenix_headers(token):
     return {
         "User-Agent": USER_AGENT,
         "Content-Type": "application/json; charset=utf-8",
         "X-Unity-Version": "2022.3.62f2",
         "Authorization": f"Bearer {token}",
         "X-Client-Hash": CLIENT_HASH,
+        "X-Phoenix-Signature": MARKO_SIGNATURE,
+        "X-Phoenix-Version": MARKO_VERSION,
+        "X-Phoenix-Developer": DEVELOPER,
+    }
+
+def ogames_headers(token, device_id):
+    return {
+        "X-Firebase-Token": token,
         "X-Client-Platform": "ANDROID",
         "X-Client-Version": VERSION,
-        "X-Client-DeviceId": gen_device_id(),
+        "X-Client-DeviceId": device_id,
         "X-Api-Key": OG_KEY,
+        "X-Client-Env": "prod",
         "X-Bundle-Id": BUNDLE_ID,
+        "Content-Type": "application/json",
+        "User-Agent": USER_AGENT,
+        "X-Client-Hash": CLIENT_HASH,
+        "X-Phoenix-Tag": MARKO_SIGNATURE,
+        "X-Phoenix-Developer": DEVELOPER,
     }
 
 # ================================================================
@@ -179,10 +194,23 @@ async def phoenix_login(email, password, session):
     except: pass
     return None
 
+async def phoenix_start_session(token, uid, session):
+    device_id = gen_device_id()
+    oh = ogames_headers(token, device_id)
+    try:
+        await session.get(f"{OG_BASE}/check-service/v1/hash/check", headers=oh, timeout=15)
+        await session.post(f"{OG_BASE}/check-service/v1/session/start", headers=oh, json={}, timeout=15)
+    except: pass
+
+    url = f"{CF_BASE}/MasterMainStartup23_1"
+    try:
+        await session.post(url, headers=phoenix_headers(token), json={"data": "0"}, timeout=15)
+    except: pass
+
 async def phoenix_get_coins(session, token, uid):
     url = f"{CF_BASE}/GetCoins23_1"
     try:
-        async with session.post(url, headers=unity_headers(token), json={"data": None}, timeout=20) as response:
+        async with session.post(url, headers=phoenix_headers(token), json={"data": None}, timeout=20) as response:
             if response.status == 200:
                 result = await response.json()
                 if "result" in result and isinstance(result["result"], dict) and "data" in result["result"]:
@@ -202,7 +230,7 @@ async def phoenix_farm_exact_coins(session, token, uid, target_add, status_callb
         encrypted = crypto.encrypt(f"{a},{b},{c}")
         url = f"{CF_BASE}/SetDragRacing23_1"
         try:
-            async with session.post(url, headers=unity_headers(token), json={"data": encrypted}, timeout=20) as response:
+            async with session.post(url, headers=phoenix_headers(token), json={"data": encrypted}, timeout=20) as response:
                 if response.status == 200:
                     result = await response.json()
                     if "result" in result and isinstance(result["result"], dict) and "data" in result["result"]:
@@ -211,7 +239,7 @@ async def phoenix_farm_exact_coins(session, token, uid, target_add, status_callb
         except: pass
         return 0
 
-    batch_size = 50
+    batch_size = 100
     for i in range(0, len(all_combos), batch_size):
         if coins_harvested >= target_add: break
         batch = all_combos[i:i+batch_size]
@@ -223,7 +251,7 @@ async def phoenix_farm_exact_coins(session, token, uid, target_add, status_callb
         if status_callback:
             await status_callback(coins_harvested, target_add)
             
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(0.2)
         
     return coins_harvested
 
@@ -306,12 +334,16 @@ async def process_farming(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return ConversationHandler.END
 
         token, uid = auth["token"], auth["uid"]
+        
+        await status_msg.edit_text("⚡ Initiating Safe Server Bypass...", parse_mode="Markdown")
+        await phoenix_start_session(token, uid, session)
+        
         current_coins = await phoenix_get_coins(session, token, uid)
         
         last_update_time = time.time()
         async def update_progress(harvested, target):
             nonlocal last_update_time
-            if time.time() - last_update_time > 2.0:  # Update message every 2 seconds to avoid Telegram ban
+            if time.time() - last_update_time > 2.0:  
                 try:
                     await status_msg.edit_text(
                         f"⚡ Farming {target} coins via Safe API...\n"
@@ -322,7 +354,7 @@ async def process_farming(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     last_update_time = time.time()
                 except: pass
 
-        await status_msg.edit_text(f"⚡ Starting to farm {COINS_TO_ADD} Coins...")
+        await status_msg.edit_text(f"🚜 Starting to farm {COINS_TO_ADD} Coins...")
         farmed = await phoenix_farm_exact_coins(session, token, uid, COINS_TO_ADD, update_progress)
         final_coins = await phoenix_get_coins(session, token, uid)
 
