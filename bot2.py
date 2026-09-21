@@ -63,18 +63,39 @@ DEVELOPER = "MARKO"
 
 WAITING_FARM_CREDS, WAITING_ADD_ACCOUNTS, WAITING_DELETE_ACCOUNTS = range(3)
 
+# KING RANK STATS (Required to get coins from Drag Race)
+KING_RATING_RESULT_ALL = {
+    "general": {
+        "cars": 100000, "car_fix": 100000, "car_collided": 100000, "car_exchange": 100000,
+        "car_trade": 100000, "car_wash": 100000, "slicer_cut": 100000, "drift_max": 100000,
+        "drift": 100000, "cargo": 100000, "delivery": 100000, "taxi": 100000, "levels": 100000,
+        "gifts": 100000, "fuel": 100000, "offroad": 100000, "speed_banner": 100000,
+        "reactions": 100000, "police": 100000, "run": 100000, "real_estate": 100000,
+        "t_distance": 100000, "treasure": 100000, "block_post": 100000, "push_ups": 100000,
+        "burnt_tire": 100000, "passanger_distance": 100000, "time": 9999999999, "race_win": 5000,
+    },
+    "achievements": {
+        "cars": 5, "car_fix": 5, "car_collided": 5, "car_exchange": 5,
+        "car_trade": 5, "car_wash": 5, "slicer_cut": 5, "drift_max": 5,
+        "drift": 5, "cargo": 5, "delivery": 5, "taxi": 5, "levels": 5,
+        "gifts": 5, "fuel": 5, "offroad": 5, "speed_banner": 5,
+        "reactions": 5, "police": 5, "run": 5, "real_estate": 5,
+        "t_distance": 5, "treasure": 5, "block_post": 5, "push_ups": 5,
+        "burnt_tire": 5, "passanger_distance": 5, "time": 5, "race_win": 5,
+    },
+    "race_win": 5000, "level": 120, "score": 999.0, "batches": [5, 15, 25, 45, 60, 120],
+}
+
 # ================================================================
 # RENDER HEALTH SERVER
 # ================================================================
 class HealthHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path in ("/", "/health"):
-            body = b"OK"
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
             self.end_headers()
-            self.wfile.write(body)
+            self.wfile.write(b"OK")
         else:
             self.send_response(404)
             self.end_headers()
@@ -86,7 +107,7 @@ def start_health_server():
     server.serve_forever()
 
 # ================================================================
-# ADMIN SECURITY FILTER DECORATOR
+# SECURITY & PERSISTENCE
 # ================================================================
 def admin_only(func):
     @wraps(func)
@@ -98,9 +119,6 @@ def admin_only(func):
         return await func(update, context, *args, **kwargs)
     return wrapper
 
-# ================================================================
-# PERSISTENCE STORAGE HELPERS
-# ================================================================
 def load_accounts():
     if os.path.exists(ACCOUNTS_FILE):
         try:
@@ -146,7 +164,7 @@ class Crypto:
                 val = self.extract_value(item)
                 if val is not None: return val
         if isinstance(data, dict):
-            for key in ['coins', 'value', 'coin', 'amount']:
+            for key in ['coins', 'value', 'coin', 'amount', 'data']:
                 if key in data:
                     val = self.extract_value(data[key])
                     if val is not None: return val
@@ -154,7 +172,6 @@ class Crypto:
 
 def gen_device_id(): return MARKO_DEVICE_PREFIX + ''.join(random.choice('0123456789abcdef') for _ in range(28))
 
-# Missed Phoenix Headers Added Back!
 def phoenix_headers(token):
     return {
         "User-Agent": USER_AGENT,
@@ -202,9 +219,8 @@ async def phoenix_start_session(token, uid, session):
         await session.post(f"{OG_BASE}/check-service/v1/session/start", headers=oh, json={}, timeout=15)
     except: pass
 
-    url = f"{CF_BASE}/MasterMainStartup23_1"
     try:
-        await session.post(url, headers=phoenix_headers(token), json={"data": "0"}, timeout=15)
+        await session.post(f"{CF_BASE}/MasterMainStartup23_1", headers=phoenix_headers(token), json={"data": "0"}, timeout=15)
     except: pass
 
 async def phoenix_get_coins(session, token, uid):
@@ -223,14 +239,20 @@ async def phoenix_get_coins(session, token, uid):
 async def phoenix_farm_exact_coins(session, token, uid, target_add, status_callback=None):
     crypto = Crypto(uid)
     coins_harvested = 0
-    all_combos = [(a, b, c) for a in range(10) for b in range(1, 7) for c in range(10)]
     
-    async def exec_drag(seq):
+    # 1. APPLY KING RANK FIRST (Essential for getting coins)
+    rank_payload = crypto.encrypt(json.dumps(KING_RATING_RESULT_ALL))
+    try:
+        await session.post(f"{CF_BASE}/SetUserRating22_1", headers=phoenix_headers(token), json={"data": rank_payload}, timeout=15)
+        await session.post(f"{CF_BASE}/ValidateRank23_1", headers=phoenix_headers(token), json={"data": "0"}, timeout=15)
+    except: pass
+
+    # Phase 1: Normal Combos
+    async def exec_drag_phase1(seq):
         a, b, c = seq
         encrypted = crypto.encrypt(f"{a},{b},{c}")
-        url = f"{CF_BASE}/SetDragRacing23_1"
         try:
-            async with session.post(url, headers=phoenix_headers(token), json={"data": encrypted}, timeout=20) as response:
+            async with session.post(f"{CF_BASE}/SetDragRacing23_1", headers=phoenix_headers(token), json={"data": encrypted}, timeout=20) as response:
                 if response.status == 200:
                     result = await response.json()
                     if "result" in result and isinstance(result["result"], dict) and "data" in result["result"]:
@@ -239,27 +261,64 @@ async def phoenix_farm_exact_coins(session, token, uid, target_add, status_callb
         except: pass
         return 0
 
-    batch_size = 100
-    for i in range(0, len(all_combos), batch_size):
+    # Phase 2: High Yield Combos
+    async def exec_drag_phase2(combo):
+        car, place, gear = combo
+        encrypted = crypto.encrypt(f"{car},{place},{gear}")
+        try:
+            async with session.post(f"{CF_BASE}/SetDragRacing22_1", headers=phoenix_headers(token), json={"data": encrypted}, timeout=20) as response:
+                text = await response.text()
+                try:
+                    parsed = json.loads(text)
+                    res = parsed.get("result")
+                    if res:
+                        arr = []
+                        if isinstance(res, str):
+                            try:
+                                parsed2 = json.loads(res)
+                                if isinstance(parsed2, list) and len(parsed2) >= 2: arr = parsed2
+                            except: pass
+                        elif isinstance(res, list) and len(res) >= 2: arr = res
+                        if len(arr) >= 2:
+                            decrypted = crypto.decrypt(arr[1]) if isinstance(arr[1], str) else None
+                            if decrypted: return int(decrypted)
+                except: pass
+        except: pass
+        return 0
+
+    batch_size = 50
+    
+    # Run Phase 1
+    all_combos_p1 = [(a, b, c) for a in range(10) for b in range(1, 7) for c in range(10)]
+    for i in range(0, len(all_combos_p1), batch_size):
         if coins_harvested >= target_add: break
-        batch = all_combos[i:i+batch_size]
-        results = await asyncio.gather(*[exec_drag(seq) for seq in batch])
-        
+        batch = all_combos_p1[i:i+batch_size]
+        results = await asyncio.gather(*[exec_drag_phase1(seq) for seq in batch])
         for c in results:
             if c > 0: coins_harvested += c
-                
-        if status_callback:
-            await status_callback(coins_harvested, target_add)
-            
-        await asyncio.sleep(0.2)
-        
+        if status_callback: await status_callback(coins_harvested, target_add)
+        await asyncio.sleep(0.5)
+
+    # Run Phase 2 (If still not reached target)
+    if coins_harvested < target_add:
+        all_combos_p2 = [(car, place, gear) for car in range(6) for place in range(1, 4) for gear in range(2)]
+        for _ in range(3):  # Loop max 3 times
+            if coins_harvested >= target_add: break
+            for i in range(0, len(all_combos_p2), batch_size):
+                if coins_harvested >= target_add: break
+                batch = all_combos_p2[i:i+batch_size]
+                results = await asyncio.gather(*[exec_drag_phase2(seq) for seq in batch])
+                for c in results:
+                    if c > 0: coins_harvested += c
+                if status_callback: await status_callback(coins_harvested, target_add)
+                await asyncio.sleep(0.5)
+
     return coins_harvested
 
 # ================================================================
 # TELEGRAM UI HELPERS
 # ================================================================
-def get_main_menu():
-    return ReplyKeyboardMarkup([["🚀 Start Farming", "📋 My Accounts"]], resize_keyboard=True)
+def get_main_menu(): return ReplyKeyboardMarkup([["🚀 Start Farming", "📋 My Accounts"]], resize_keyboard=True)
 
 def get_accounts_main_inline():
     return InlineKeyboardMarkup([
@@ -286,8 +345,7 @@ def build_accounts_page(user_id, page=0):
     text = f"📋 **Saved Accounts** (`{total_accs}/{MAX_ACCOUNTS}`)\nPage `{page + 1}/{total_pages}`\n\n"
     if not accounts: text += "_No accounts saved yet._"
     else:
-        for idx, acc in enumerate(page_accs, start=start_idx + 1):
-            text += f"`{idx}.` `{acc['email']}:{acc['password']}`\n"
+        for idx, acc in enumerate(page_accs, start=start_idx + 1): text += f"`{idx}.` `{acc['email']}:{acc['password']}`\n"
 
     nav_buttons = []
     if page > 0: nav_buttons.append(InlineKeyboardButton("◀️ Prev", callback_data=f"acc_page_{page - 1}"))
