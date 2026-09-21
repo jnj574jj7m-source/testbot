@@ -226,7 +226,8 @@ async def phoenix_get_coins(session, token, uid):
 
 async def phoenix_inject_coins(session, token, uid, target_amount):
     """MemoryPack vazhi coins mathram update cheyyunna function"""
-    wallet_data = mp_i32(1) + mp_u16(0) + mp_i32(8) + mp_i64(target_amount)
+    # Ivide mp_u16(1) aakkiyittundu (1 = Coins)
+    wallet_data = mp_i32(1) + mp_u16(1) + mp_i32(8) + mp_i64(target_amount)
     encoded_payload = mp_encode(wallet_data, uid)
     url = f"{CF_BASE}/SaveWalletData23_1"
     try:
@@ -236,6 +237,7 @@ async def phoenix_inject_coins(session, token, uid, target_amount):
     except Exception:
         pass
     return False
+
 
 # ================================================================
 # TELEGRAM UI HELPERS
