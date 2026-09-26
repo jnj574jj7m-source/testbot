@@ -61,7 +61,7 @@ bot = telebot.TeleBot(BOT_TOKEN)
 OWNER_ID  = 7212602902
 
 ADMIN_IDS = [8003371335, 8884756222]
-ALLOWED_KEYS = [ "FANTOM"]
+ALLOWED_KEYS = ["FANTOM"]
 CHANNEL_ID = "-1004330181139"
 CHANNEL_LINK = "https://t.me/sallezone"
 
@@ -69,6 +69,7 @@ CHANNEL_LINK = "https://t.me/sallezone"
 # 📡 API SETTINGS
 # ═══════════════════════════════════════════════════════════
 
+# CPM1 - from cpm_nuker.py
 FK = "AIzaSyAe_aOVT1gSfmHKBrorFvX4fRwN5nODXVA"
 LOAD_URL = "https://europe-west1-cp-multiplayer.cloudfunctions.net/GetPlayerRecords3"
 SAVE_URL = "https://europe-west1-cp-multiplayer.cloudfunctions.net/SavePlayerRecordsPartially8"
@@ -84,6 +85,7 @@ GAME_HEADERS = {
     "X-Unity-Version": "2022.3.62f2",
 }
 
+# CPM2 - old
 CPM2_API_KEY = 'AIzaSyCQDz9rgjgmvmFkvVfmvr2-7fT4tfrzRRQ'
 CPM2_BASE = 'https://europe-west1-cpm-2-7cea1.cloudfunctions.net'
 CPM2_OG_KEY = '320b93f3e7f4410aa52ce24da363ad04'
@@ -99,15 +101,19 @@ FB_SIGNUP_CPM2 = f'https://identitytoolkit.googleapis.com/v1/accounts:signUp?key
 HAS_CRYPTO = True
 HAS_BROTLI = True
 
-KEY_USAGE = {}
-KEY_USAGE_COUNT = {}
-KEY_USERS_DETAILS = {}
-TIME_KEYS = {}
-TRIAL_KEYS = {}
-FREE_TRIAL_USERS = {}
+# ═══════════════════════════════════════════════════════════
+# 🔑 KEY TRACKING
+# ═══════════════════════════════════════════════════════════
+
+KEY_USAGE = {}  
+KEY_USAGE_COUNT = {}  
+KEY_USERS_DETAILS = {}  
+TIME_KEYS = {}  
+TRIAL_KEYS = {}  
+FREE_TRIAL_USERS = {}  
 
 # ═══════════════════════════════════════════════════════════
-# ENCRYPTION / DECRYPTION FUNCTIONS
+# ENCRYPTION / DECRYPTION FUNCTIONS (from cpm_nuker.py)
 # ═══════════════════════════════════════════════════════════
 
 def make_xor_key(uid: str) -> bytes:
@@ -667,6 +673,7 @@ class CPMNuker:
                     except Exception:
                         return {"raw": text, "status": resp.status}
         except Exception as exc:
+            print(f"HTTP error: {exc}")
             return None
 
     async def login(self, email: str, password: str) -> Dict[str, Any]:
@@ -691,6 +698,9 @@ class CPMNuker:
                 "firebase_uid": result.get("localId", ""),
             }
         err = str(result.get("error", {}).get("message", "")).upper()
+        for key in ["EMAIL_NOT_FOUND", "INVALID_PASSWORD", "INVALID_LOGIN_CREDENTIALS", "TOO_MANY_ATTEMPTS", "USER_DISABLED", "INVALID_EMAIL"]:
+            if key in err:
+                return {"ok": False, "message": key}
         return {"ok": False, "message": f"LOGIN_FAILED: {err[:80]}"}
 
     async def account_login(self, email: str, password: str) -> Dict[str, Any]:
@@ -739,14 +749,18 @@ class CPMNuker:
             return True
         ok, msg, auth = await self.get_auth(uid)
         if not ok:
+            print(f"load: no valid token for {uid}: {msg}")
             return False
         result = await self._post(LOAD_URL, {"data": None}, {**GAME_HEADERS, "Authorization": f"Bearer {auth}"})
         if not result or not result.get("result"):
+            print(f"load: empty/invalid response for {uid}: {str(result)[:200]}")
             return False
         decoded = decrypt_player_record(result["result"], td.get("firebase_uid", ""), td.get("password", ""), td.get("email", ""))
         if decoded.get("success") and decoded.get("record"):
             self.set_record(uid, decoded["record"], td.get("email", ""))
+            print(f"Loaded {uid}: {decoded['record'].get('Name')}")
             return True
+        print(f"load: decrypt failed for {uid}: {decoded.get('message')}")
         return False
 
     async def load_account(self, uid: int, force: bool = False) -> bool:
@@ -812,7 +826,7 @@ class CPMNuker:
         email = td.get("email") if td else None
         data = deepcopy(self.get_record(uid, email))
         if not data or data.get("Name") is None:
-            return {"ok": False, "message": "Could not load account data."}
+            return {"ok": False, "message": "Could not load account data. Try logging in again or refreshing first."}
         for key, value in mods.items():
             if key == "money":
                 value = min(int(value), MAX_MONEY)
@@ -828,7 +842,7 @@ class CPMNuker:
         email = td.get("email") if td else None
         data = deepcopy(self.get_record(uid, email))
         if not data or data.get("Name") is None:
-            return {"ok": False, "message": "Could not load account data."}
+            return {"ok": False, "message": "Could not load account data. Try logging in again or refreshing first."}
         floats = data.get("floats", [])
         max_idx = max(idx for idx, _ in indices_values)
         while len(floats) <= max_idx:
@@ -844,7 +858,7 @@ class CPMNuker:
         email = td.get("email") if td else None
         data = deepcopy(self.get_record(uid, email))
         if not data or data.get("Name") is None:
-            return {"ok": False, "message": "Could not load account data."}
+            return {"ok": False, "message": "Could not load account data. Try logging in again or refreshing first."}
         integers = data.get("integers", [])
         max_idx = max(idx for idx, _ in indices_values)
         while len(integers) <= max_idx:
@@ -860,6 +874,9 @@ class CPMNuker:
     async def set_coin(self, uid: int, amount: int) -> Dict[str, Any]:
         return await self._modify(uid, {"coin": min(int(amount), MAX_COIN)}, force_fields={"coin"})
 
+    async def set_player_name(self, uid: int, name: str) -> Dict[str, Any]:
+        return await self._modify(uid, {"Name": str(name)}, force_fields={"Name"})
+
     async def set_player_id(self, uid: int, pid: str) -> Dict[str, Any]:
         return await self._modify(uid, {"localID": str(pid).upper()}, force_fields={"localID"})
 
@@ -869,7 +886,7 @@ class CPMNuker:
         email = td.get("email") if td else None
         data = deepcopy(self.get_record(uid, email))
         if not data or data.get("Name") is None:
-            return {"ok": False, "message": "Could not load account data."}
+            return {"ok": False, "message": "Could not load account data. Please login first."}
         new_id_upper = str(new_id).strip().upper()
         if not new_id_upper:
             return {"ok": False, "message": "ID cannot be empty."}
@@ -885,19 +902,35 @@ class CPMNuker:
         td = self.get_token_data(uid)
         if not td:
             return {"ok": False, "message": "Token data not found"}
+        
         old_email = td.get("email")
         password = td.get("password")
+        
         if not password:
             return {"ok": False, "message": "Password not found"}
+        
         try:
             login_result = await self.login(old_email, password)
             if not login_result.get("ok"):
                 return {"ok": False, "message": "Failed to login with old credentials"}
+            
             url = f"https://identitytoolkit.googleapis.com/v1/accounts:update?key={FK}"
-            payload = {"idToken": login_result["auth"], "email": new_email, "returnSecureToken": True}
+            payload = {
+                "idToken": login_result["auth"],
+                "email": new_email,
+                "returnSecureToken": True
+            }
+            
             result = await self._post(url, payload, {})
             if result and result.get("email"):
-                self.save_token(uid, result.get("idToken", login_result["auth"]), new_email, password, result.get("refreshToken", login_result.get("refresh_token", "")), result.get("localId", td.get("firebase_uid", "")))
+                self.save_token(
+                    uid,
+                    result.get("idToken", login_result["auth"]),
+                    new_email,
+                    password,
+                    result.get("refreshToken", login_result.get("refresh_token", "")),
+                    result.get("localId", td.get("firebase_uid", ""))
+                )
                 return {"ok": True, "message": f"Email changed to {new_email}"}
             else:
                 return {"ok": False, "message": "Failed to change email"}
@@ -909,19 +942,35 @@ class CPMNuker:
         td = self.get_token_data(uid)
         if not td:
             return {"ok": False, "message": "Token data not found"}
+        
         email = td.get("email")
         old_password = td.get("password")
+        
         if not email or not old_password:
             return {"ok": False, "message": "Email or password not found"}
+        
         try:
             login_result = await self.login(email, old_password)
             if not login_result.get("ok"):
                 return {"ok": False, "message": "Failed to login with old credentials"}
+            
             url = f"https://identitytoolkit.googleapis.com/v1/accounts:update?key={FK}"
-            payload = {"idToken": login_result["auth"], "password": new_password, "returnSecureToken": True}
+            payload = {
+                "idToken": login_result["auth"],
+                "password": new_password,
+                "returnSecureToken": True
+            }
+            
             result = await self._post(url, payload, {})
             if result and result.get("idToken"):
-                self.save_token(uid, result["idToken"], email, new_password, result.get("refreshToken", login_result.get("refresh_token", "")), result.get("localId", td.get("firebase_uid", "")))
+                self.save_token(
+                    uid,
+                    result["idToken"],
+                    email,
+                    new_password,
+                    result.get("refreshToken", login_result.get("refresh_token", "")),
+                    result.get("localId", td.get("firebase_uid", ""))
+                )
                 return {"ok": True, "message": "Password changed successfully"}
             else:
                 return {"ok": False, "message": "Failed to change password"}
@@ -994,9 +1043,111 @@ class CPMNuker:
         }}
         try:
             await self._post(RANK_URL, {"data": json.dumps(rating_data)}, {**GAME_HEADERS, "Authorization": f"Bearer {auth}"})
-        except Exception:
+        except Exception as exc:
             pass
         return {"ok": True, "message": "OK"}
+
+    def _normalize_equipment(self, equipment: Dict[str, Any], gender: int) -> Dict[str, Any]:
+        list_fields = [
+            "hair", "face", "beard", "cap", "mask", "top", "gloves",
+            "bag", "pants", "shoes", "glasses", "SelectedEquipments",
+        ]
+        normalized = {}
+        for key in list_fields:
+            values = equipment.get(key, []) if isinstance(equipment, dict) else []
+            normalized[key] = [int(v) for v in values]
+        normalized["Gender"] = int(gender)
+        return normalized
+
+    async def _save_equipment(self, uid: int, field: str, equipment: Dict[str, Any]) -> Dict[str, Any]:
+        await self.load(uid, force=True)
+        td = self.get_token_data(uid)
+        email = td.get("email") if td else None
+        data = deepcopy(self.get_record(uid, email))
+        if not data or data.get("Name") is None:
+            return {"ok": False, "message": "Could not load account data. Try logging in again or refreshing first."}
+        gender = 0 if field == "personEquipmentsMale" else 1
+        data[field] = self._normalize_equipment(equipment, gender)
+        force_fields = {field}
+        other_field = "personEquipmentsFemale" if field == "personEquipmentsMale" else "personEquipmentsMale"
+        other_gender = 1 if other_field == "personEquipmentsFemale" else 0
+        if data.get(other_field):
+            data[other_field] = self._normalize_equipment(data[other_field], data[other_field].get("Gender", other_gender))
+            force_fields.add(other_field)
+        return await self._save(uid, data, force_fields=force_fields)
+
+    async def unlock_equipments_male(self, uid: int) -> Dict[str, Any]:
+        equipment = {
+            "Gender": 0,
+            "bag": list(range(101)),
+            "beard": list(range(6, 21)) + [100],
+            "cap": list(range(3, 64)),
+            "face": [0, 1, 2, 100],
+            "glasses": list(range(10)) + [100],
+            "gloves": list(range(6)) + [100],
+            "hair": list(range(3, 20)) + [100],
+            "mask": list(range(3, 9)) + [100],
+            "pants": list(range(26)),
+            "shoes": list(range(31)),
+            "top": list(range(2, 109)),
+            "SelectedEquipments": [-1, 10, 19, 41, 100, 4, 20, 9, 22, 21, 74],
+        }
+        return await self._save_equipment(uid, "personEquipmentsMale", equipment)
+
+    async def unlock_equipments_female(self, uid: int) -> Dict[str, Any]:
+        equipment = {
+            "Gender": 1,
+            "bag": list(range(6)),
+            "beard": [],
+            "cap": list(range(3, 41)),
+            "face": [0],
+            "glasses": list(range(10)),
+            "gloves": [1],
+            "hair": [0, 7, 8, 9, 10],
+            "mask": list(range(3, 8)),
+            "pants": list(range(12)),
+            "shoes": list(range(3, 15)),
+            "top": list(range(5, 80)),
+            "SelectedEquipments": [0, 0, -1, -1, -1, -1, -1, -1, 0, -1, -1],
+        }
+        return await self._save_equipment(uid, "personEquipmentsFemale", equipment)
+
+    async def fix_account(self, uid: int) -> Dict[str, Any]:
+        await self.load(uid)
+        td = self.get_token_data(uid)
+        email = td.get("email") if td else None
+        data = deepcopy(self.get_record(uid, email))
+        if not data or data.get("Name") is None:
+            return {"ok": False, "message": "Could not load account data."}
+        bugs = 0
+        floats = data.get("floats", [])[:54]
+        while len(floats) < 54:
+            floats.append(0.0)
+        fixed_floats = []
+        for value in floats:
+            if value in (1, 1.0):
+                fixed_floats.append(1.0)
+            elif isinstance(value, (int, float)) and value > 1:
+                bugs += 1
+                fixed_floats.append(0.0)
+            else:
+                fixed_floats.append(float(value) if value else 0.0)
+        integers = data.get("integers", [])[:120]
+        while len(integers) < 120:
+            integers.append(0)
+        fixed_integers = []
+        for value in integers:
+            if value == 1:
+                fixed_integers.append(1)
+            elif isinstance(value, (int, float)) and value > 1:
+                bugs += 1
+                fixed_integers.append(0)
+            else:
+                fixed_integers.append(int(value) if value else 0)
+        data["floats"] = fixed_floats
+        data["integers"] = fixed_integers
+        result = await self._save(uid, data, force_fields={"floats", "integers"})
+        return {"ok": True, "bugs_fixed": bugs, "message": f"{bugs} bugs fixed"} if result.get("ok") else {"ok": False, "message": "FIX_FAILED"}
 
     async def unlock_all_features(self, uid: int) -> Dict[str, Any]:
         feature_calls = [
@@ -1022,7 +1173,7 @@ class CPMNuker:
                 failed.append(f"{name}: {result.get('message', 'Failed')}")
         return {
             "ok": not failed,
-            "message": f"Unlocked {len(results)}/{len(feature_calls)} features",
+            "message": f"Unlocked {len(results)}/{len(feature_calls)} features" + ("; " + "; ".join(failed) if failed else ""),
             "results": results,
             "failed": failed,
         }
@@ -1032,8 +1183,10 @@ class CPMNuker:
         td = self.get_token_data(uid)
         email = td.get("email") if td else None
         data = self.get_record(uid, email)
+        
         if not data or data.get("Name") is None:
             return {"ok": False, "message": "Could not load account data"}
+        
         return {
             "ok": True,
             "name": data.get("Name", "Unknown"),
@@ -1044,12 +1197,13 @@ class CPMNuker:
         }
 
 # ═══════════════════════════════════════════════════════════
-# 🎮 CPM2 FUNCTIONS
+# 🎮 CPM2 FUNCTIONS (from old code - working)
 # ═══════════════════════════════════════════════════════════
 
 def gen_device_id():
-    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=32))
+    return ''.join(random.choice('0123456789abcdef') for _ in range(32))
 
+CPM2_DEVICE_ID = gen_device_id()
 _cpm2_session = requests.Session()
 
 class CPM2Crypto:
@@ -1103,12 +1257,12 @@ def cpm2_king_rank(email, pw):
 
 def generate_cpm2_account():
     username = ''.join(random.choices(string.ascii_lowercase + string.digits, k=10))
-    email = f"{username}@FANTOM-CPM.com"
+    email = f"{username}@CPM-MAFIAx PRIMO-CPM TOOL.com"
     password = ''.join(random.choices(string.ascii_letters + string.digits, k=12))
     return {"email": email, "password": password}, None
 
 # ═══════════════════════════════════════════════════════════
-# 📋 CPM1 BASIC FUNCTIONS
+# 📋 CPM1 BASIC FUNCTIONS (old - for cloning and car unlocking)
 # ═══════════════════════════════════════════════════════════
 
 def verify_user(email, password):
@@ -1158,6 +1312,7 @@ def cpm1_get_garage_slot(token):
         except:
             pass
         time.sleep(0.5)
+    
     try:
         status, text = cpm1_api(token, "WSGetCarListV3", 20)
         if status == 200:
@@ -1170,6 +1325,7 @@ def cpm1_get_garage_slot(token):
                 pass
     except:
         pass
+    
     return None
 
 def cpm1_clone_car(token_target, car_data, target_uid):
@@ -1182,6 +1338,18 @@ def cpm1_clone_car(token_target, car_data, target_uid):
     car['torque'] = 3000.0
     car['brake'] = 3000.0
     car['mass'] = 1100.0
+    try:
+        if 'texts' in car and isinstance(car['texts'], list) and len(car['texts']) > 2:
+            car['texts'][2] = f"{target_uid[:8].upper()}_{cid}_HZ"
+        elif 'texts' in car and isinstance(car['texts'], str):
+            car['texts'] = ["", "", f"{target_uid[:8].upper()}_{cid}_HZ"]
+    except:
+        pass
+    try:
+        if isinstance(car.get('Vynils'), dict):
+            car['Vynils']['CarID'] = cid
+    except:
+        pass
     slot = cpm1_get_garage_slot(token_target)
     if not slot:
         return False
@@ -1225,7 +1393,7 @@ def cpm1_clone_account(source_email, source_pass, target_email, target_pass):
         return False, {"error": "Failed to login to target", "total": 0, "success": 0, "fail": 0}
     success_count = 0
     fail_count = 0
-    for car in cars:
+    for idx, car in enumerate(cars):
         if not isinstance(car, dict):
             continue
         if cpm1_clone_car(target_token, car, target_uid):
@@ -1239,7 +1407,7 @@ def cpm1_clone_account(source_email, source_pass, target_email, target_pass):
     elif success_count > 0:
         return "partial", result_data
     else:
-        result_data["error"] = "All cars failed to clone."
+        result_data["error"] = "All cars failed to clone. Target garage may be full or API rejected the request."
         return False, result_data
 
 SOURCE_ACCOUNT = ('hz.t0zrj@hzshop.com', '112233')
@@ -1249,24 +1417,43 @@ def cpm1_inject_car(email, password, car_id):
         tok, uid = verify_user(email, password)
         if not tok:
             return False
+        
         stok, _ = verify_user(*SOURCE_ACCOUNT)
         if not stok:
             return False
+        
         status, text = cpm1_api(stok, "GetAllCars2", None)
         if status != 200:
             return False
+        
         try:
             cars = json.loads(json.loads(text)['result'])
         except:
             return False
+        
         if not cars or len(cars) == 0:
             return False
+        
         tpl = max(cars, key=lambda c: c.get('CarID', 0))
         car = json.loads(json.dumps(tpl))
         car['CarID'] = car_id
+        
+        try:
+            if 'texts' in car and isinstance(car['texts'], list) and len(car['texts']) > 2:
+                car['texts'][2] = f'{uid[:8].upper()}_{car_id}_HZ'
+        except:
+            pass
+        
+        try:
+            if isinstance(car.get('Vynils'), dict):
+                car['Vynils']['CarID'] = car_id
+        except:
+            pass
+        
         slot = cpm1_get_garage_slot(tok)
         if not slot:
             return False
+        
         payload = {
             "ownerID": slot.get('ownerID', ''),
             "ownerName": slot.get('ownerName', ''),
@@ -1286,15 +1473,19 @@ def cpm1_inject_car(email, password, car_id):
             "disliked": False,
             "mode": 1,
         }
+        
         status, text = cpm1_api(tok, 'WSPurchaseCarV3', json.dumps(payload))
+        
         try:
             result = json.loads(text)
             if status == 200 and result.get('result') == 1:
                 return True
+            else:
+                return False
         except:
-            pass
-        return False
-    except:
+            return False
+            
+    except Exception as e:
         return False
 
 def cpm1_inject_cars_auto(email, password, car_ids, progress_callback=None):
@@ -1338,8 +1529,110 @@ def notify_admins(message_text, parse_mode='Markdown'):
     for admin_id in ADMIN_IDS:
         try:
             bot.send_message(admin_id, f"📢 **New Notification**\n━━━━━━━━━━━━━━━━━━━━━\n{message_text}", parse_mode=parse_mode)
-        except:
+        except Exception as e:
             pass
+
+# ═══════════════════════════════════════════════════════════
+# 🔑 TIME KEY FUNCTIONS
+# ═══════════════════════════════════════════════════════════
+
+def generate_time_key():
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choices(chars, k=16))
+
+def create_time_key(duration_hours: int, created_by: int) -> str:
+    key = generate_time_key()
+    TIME_KEYS[key] = {
+        "expires": datetime.now() + timedelta(hours=duration_hours),
+        "duration": duration_hours,
+        "used": False,
+        "user_id": None,
+        "created_by": created_by,
+        "created_at": datetime.now(),
+        "key_type": "time"
+    }
+    return key
+
+def use_time_key(key: str, user_id: int) -> Tuple[bool, str]:
+    if key not in TIME_KEYS:
+        return False, "Key not found"
+    
+    key_data = TIME_KEYS[key]
+    
+    if datetime.now() > key_data["expires"]:
+        return False, "Key has expired"
+    
+    if key_data["used"]:
+        if key_data["user_id"] == user_id:
+            return True, "Key is still valid for you"
+        else:
+            return False, "Key already used by another user"
+    
+    key_data["used"] = True
+    key_data["user_id"] = user_id
+    return True, "Key activated successfully"
+
+def get_time_key_info(key: str) -> Dict[str, Any]:
+    if key not in TIME_KEYS:
+        return None
+    return TIME_KEYS[key]
+
+# ═══════════════════════════════════════════════════════════
+# 🎁 FREE TRIAL FUNCTIONS
+# ═══════════════════════════════════════════════════════════
+
+def generate_trial_key():
+    chars = string.ascii_uppercase + string.digits
+    return ''.join(random.choices(chars, k=12))
+
+def create_trial_key(user_id=None, minutes=10):
+    key = generate_trial_key()
+    TRIAL_KEYS[key] = {
+        "user_id": user_id,
+        "expires": datetime.now() + timedelta(minutes=minutes),
+        "used": False,
+        "created_at": datetime.now(),
+        "duration": minutes,
+        "used_at": None,
+        "key_type": "trial"
+    }
+    return key
+
+def use_trial_key(key, user_id):
+    if key not in TRIAL_KEYS:
+        return False, "invalid"
+    trial_data = TRIAL_KEYS[key]
+    if datetime.now() > trial_data["expires"]:
+        return False, "expired"
+    if trial_data["used"] and trial_data["user_id"] != user_id:
+        return False, "used_by_other"
+    if trial_data["used"] and trial_data["user_id"] == user_id:
+        return True, "already_used_same_user"
+    TRIAL_KEYS[key]["used"] = True
+    TRIAL_KEYS[key]["user_id"] = user_id
+    TRIAL_KEYS[key]["used_at"] = datetime.now()
+    return True, "success"
+
+def can_use_free_trial(user_id):
+    if user_id not in FREE_TRIAL_USERS:
+        return True, 0, 0
+    last_used = FREE_TRIAL_USERS[user_id]["last_used"]
+    days_passed = (datetime.now() - last_used).days
+    if days_passed >= 5:
+        return True, 0, 0
+    next_available = last_used + timedelta(days=5)
+    remaining = next_available - datetime.now()
+    return False, remaining.days, remaining.seconds // 3600
+
+def register_free_trial(user_id):
+    FREE_TRIAL_USERS[user_id] = {
+        "last_used": datetime.now(),
+        "count": FREE_TRIAL_USERS.get(user_id, {}).get("count", 0) + 1
+    }
+
+# ═══════════════════════════════════════════════════════════
+# 📋 FORMATTING FUNCTIONS
+# ═══════════════════════════════════════════════════════════
 
 def format_account_info(info: Dict[str, Any]) -> str:
     if not info.get("ok"):
@@ -1357,20 +1650,80 @@ def format_account_info(info: Dict[str, Any]) -> str:
 
 def get_text(chat_id, key, **kwargs):
     texts = {
-        "welcome": "☠️ **AXEL-CPMx FANTOM-CPM TOOL BOT** ☠️\n🔥 **HACKER TOOL** 🔥\n━━━━━━━━━━━━━━━━━━━━━\n🔐 Welcome!\n📌 Choose section below:",
-        "cpm1_section": "☠️☠️☠️ **FANTOMxILIJA-CPM TOOL CPM1** ☠️☠️☠️\n━━━━━━━━━━━━━━━━━━━━━\n📱 **Activation Menu**",
+        "welcome": "☠️ **AXEL-CPMx FANTOM-CPM TOOL BOT** ☠️\n🔥 **HACKER TOOL** 🔥\n━━━━━━━━━━━━━━━━━━━━━\n🔐 Welcome!\n📌 Choose activation method:\n━━━━━━━━━━━━━━━━━━━━━\n🔑 Normal Key\n⏰ Time Key\n🎁 Free Trial (10 min)\n━━━━━━━━━━━━━━━━━━━━━\n👤 @ILIJASELL @fantomm111",
+        "cpm1_section": "☠️☠️☠️ ** FANTOMxILIJA-CPM TOOL CPM1** ☠️☠️☠️\n━━━━━━━━━━━━━━━━━━━━━\n📱 **Activation Menu**",
         "cpm2_section": "☠️☠️☠️ **FANTOMxILIJA-CPM TOOL CPM2** ☠️☠️☠️\n━━━━━━━━━━━━━━━━━━━━━\n🎮 **Activation Menu**",
+        "back": "🔙 Back",
+        "not_logged": "❌ **Not logged in!** Use /start",
+        "not_logged_short": "❌ **Not logged in!**",
+        "login_cpm_success": "✅ **Logged in to CPM1!**",
+        "login_cpm_fail": "❌ **Login failed!**",
+        "login_cpm2_success": "✅ **Logged in to CPM2!**",
+        "login_cpm2_fail": "❌ **Login failed!**",
+        "key_success": "✅ **Activated!**",
+        "wrong_key": "❌ Invalid key!",
+        "key_title": "🔑 **Enter activation key:**",
         "enter_pass": "☠️ **Enter password:**",
+        "email_prompt": "☠️ **Selected {section}**\n━━━━━━━━━━━━━━━━━━━━━\n📧 **Enter email:**",
+        "king_email_prompt": "👑 **Enter CPM1 email:**",
+        "king_pass_prompt": "☠️ **Enter CPM1 password:**",
+        "king_rank_success": "✅ {msg}",
+        "king_rank_fail": "❌ {msg}",
         "money_added": "✅ **Added {amount}!**",
         "money_fail": "❌ **Failed!**",
         "id_changed": "✅ **ID changed to `{new_id}`**",
         "id_fail": "❌ **Failed!**",
+        "email_changed": "✅ **Email changed to `{new_email}`**",
+        "email_fail": "❌ **Failed!**",
+        "pass_changed": "✅ **Password changed!**",
+        "pass_fail": "❌ **Failed!**",
         "clone_success": "✅ **Clone done!**\n🚗 {success}/{total} cars",
         "clone_fail": "❌ **Clone failed!**\n💀 {error}",
-        "logout": "🚪 **Logged out**",
+        "unlock_cars_done": "✅ **Cars unlocked!**",
+        "unlock_cars_fail": "❌ **Failed to unlock cars!**",
         "unlock_cars_auto_done": "✅ **Injected {success}/270 cars!**",
+        "logout": "🚪 **Logged out**",
+        "free_trial_first": "🎁 **Free trial activated!** ✅ 10 minutes",
+        "trial_activating": "🎁 Activating...",
+        "start_normal_key": "🔑 Normal Key",
+        "start_time_key": "⏰ Time Key",
+        "start_free_trial": "🎁 Free Trial (10 min)",
+        "main_cpm1": "📱 CPM1",
+        "main_cpm2": "🎮 CPM2",
+        "cpm1_change_email_btn": "🔵 Change Email",
+        "cpm1_change_pass_btn": "🟡 Change Password",
+        "cpm1_clone_btn": "📋 Clone Account",
+        "cpm1_unlock_cars_btn": "🚗 Unlock Cars",
+        "cpm1_w16_btn": "⚡ W16 Engine",
+        "cpm1_horns_btn": "📯 Horns",
+        "cpm1_fuel_btn": "⛽ Unlimited Fuel",
+        "cpm1_damage_btn": "🛡️ Disable Damage",
+        "cpm1_smoke_btn": "💨 Smoke",
+        "cpm1_rank_btn": "👑 King Rank (Advanced)",
+        "cpm1_fix_btn": "🔧 Fix Account",
+        "cpm1_change_id_btn": "🆔 Change ID",
+        "cpm1_money_btn": "💰 Add Money",
+        "cpm1_coin_btn": "💎 Add Coins",
+        "cpm1_unlock_animations_btn": "🎭 Unlock Animations",
+        "cpm1_unlock_wheels_btn": "🛞 Unlock Wheels",
+        "cpm1_unlock_houses_btn": "🏠 Unlock Houses",
+        "cpm1_complete_levels_btn": "🏆 Complete Levels",
+        "cpm1_unlock_equip_male_btn": "👨 Unlock Male Equip",
+        "cpm1_unlock_equip_female_btn": "👩 Unlock Female Equip",
+        "cpm1_ultimate_btn": "💀 Ultimate Unlock",
+        "cpm2_king_rank_btn": "👑 King Rank CPM2",
+        "cpm2_generate_btn": "🎲 Generate Full Account",
+        "admin_panel": "👑 **Admin Panel**",
+        "not_admin": "❌ **Admins only!**",
+        "refresh_account": "🔄 Refresh Info",
+        "unlock_cars_auto_confirm": "🤖 **Auto Injection (1-270)**\n⚡ Ready to inject 270 cars.\n📌 Confirm?",
+        "unlock_cars_auto_yes": "✅ Confirm",
+        "unlock_cars_auto_cancel": "❌ Cancel",
+        "unlock_cars_manual_prompt": "🖐️ **Manual Injection**\n📌 Enter Car ID:",
         "unlock_cars_prompt": "🚗 **Unlock CPM1 Cars**\n━━━━━━━━━━━━━━━━━━━━━\n📧 Email: `{email}`\n\n📌 Choose injection type:",
+        "time_key_title": "⏰ **Enter Time Key:**"
     }
+    
     text = texts.get(key, f"Missing text: {key}")
     if kwargs:
         try:
@@ -1395,7 +1748,10 @@ def save_account(chat_id, email, password, player_id=None, name=None):
     if chat_id not in saved_accounts:
         saved_accounts[chat_id] = []
     account_data = {
-        "email": email, "password": password, "player_id": player_id, "name": name,
+        "email": email,
+        "password": password,
+        "player_id": player_id,
+        "name": name,
         "saved_at": time.strftime("%Y-%m-%d %H:%M:%S")
     }
     for acc in saved_accounts[chat_id]:
@@ -1407,27 +1763,39 @@ def save_account(chat_id, email, password, player_id=None, name=None):
 def refresh_account_data(chat_id):
     if chat_id not in user_sessions or not user_sessions[chat_id].get('logged_in'):
         return False, "Not logged in"
+    
     web_uid = user_sessions[chat_id].get('web_uid')
+    if not web_uid:
+        return False, "No web UID"
+    
     email = user_sessions[chat_id].get('email')
-    if not web_uid or not email:
-        return False, "No web UID or email"
+    if not email:
+        return False, "No email"
+    
     try:
         ck = nuker._ck(web_uid, email)
         if ck in nuker.cache:
             del nuker.cache[ck]
+        
         success = run_async(nuker.load_account(web_uid, force=True))
-        return (True, "Refreshed") if success else (False, "Failed")
+        if success:
+            return True, "Data refreshed successfully"
+        else:
+            return False, "Failed to load data from server"
     except Exception as e:
-        return False, str(e)
+        return False, f"Error: {str(e)}"
 
 # ═══════════════════════════════════════════════════════════
-# 🎨 KEYBOARDS (No Subscription checks)
+# 🎨 KEYBOARDS
 # ═══════════════════════════════════════════════════════════
 
 def create_start_keyboard(chat_id):
-    markup = types.InlineKeyboardMarkup(row_width=1)
-    btn1 = types.InlineKeyboardButton("🚀 Start Bot (Direct Access)", callback_data="start_direct")
-    markup.row(btn1)
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    btn1 = types.InlineKeyboardButton("🔑 Normal Key", callback_data="normal_key")
+    btn2 = types.InlineKeyboardButton("⏰ Time Key", callback_data="time_key")
+    btn3 = types.InlineKeyboardButton("🎁 Free Trial (10 min)", callback_data="free_trial")
+    markup.row(btn1, btn2)
+    markup.row(btn3)
     return markup
 
 def create_main_keyboard(chat_id):
@@ -1512,15 +1880,24 @@ def create_admin_keyboard(chat_id):
     markup = types.InlineKeyboardMarkup(row_width=2)
     btn1 = types.InlineKeyboardButton("📊 Stats", callback_data="admin_stats")
     btn2 = types.InlineKeyboardButton("📢 Broadcast", callback_data="admin_broadcast")
-    btn3 = types.InlineKeyboardButton("🚫 Ban", callback_data="admin_ban")
-    btn4 = types.InlineKeyboardButton("✅ Unban", callback_data="admin_unban")
-    btn5 = types.InlineKeyboardButton("📝 Logs", callback_data="admin_logs")
-    btn6 = types.InlineKeyboardButton("💾 Saved Accounts", callback_data="admin_saved")
-    btn7 = types.InlineKeyboardButton("🔙 Back", callback_data="back_main")
+    btn3 = types.InlineKeyboardButton("🔑 Manage Keys", callback_data="admin_keys")
+    btn4 = types.InlineKeyboardButton("⏰ Time Keys", callback_data="admin_time_keys")
+    btn5 = types.InlineKeyboardButton("📊 Key Stats", callback_data="admin_key_stats")
+    btn6 = types.InlineKeyboardButton("👥 Key Users", callback_data="admin_key_users")
+    btn7 = types.InlineKeyboardButton("🔄 Refresh All", callback_data="admin_refresh_all")
+    btn8 = types.InlineKeyboardButton("🚫 Ban", callback_data="admin_ban")
+    btn9 = types.InlineKeyboardButton("✅ Unban", callback_data="admin_unban")
+    btn10 = types.InlineKeyboardButton("📝 Logs", callback_data="admin_logs")
+    btn11 = types.InlineKeyboardButton("💾 Saved Accounts", callback_data="admin_saved")
+    btn12 = types.InlineKeyboardButton("⚙️ Toggle Status", callback_data="admin_status")
+    btn13 = types.InlineKeyboardButton("🔙 Back", callback_data="back_main")
     markup.row(btn1, btn2)
     markup.row(btn3, btn4)
     markup.row(btn5, btn6)
-    markup.row(btn7)
+    markup.row(btn7, btn8)
+    markup.row(btn9, btn10)
+    markup.row(btn11, btn12)
+    markup.row(btn13)
     return markup
 
 # ═══════════════════════════════════════════════════════════
@@ -1534,10 +1911,12 @@ def show_cpm1_menu(chat_id, message=None, force_refresh=False):
     if chat_id not in user_sessions or not user_sessions[chat_id].get('logged_in') or user_sessions[chat_id].get('version') != "1":
         bot.send_message(chat_id, "❌ **You must login to CPM1 first!**", parse_mode='Markdown')
         return
+    
     web_uid = user_sessions[chat_id].get('web_uid')
     if not web_uid:
         bot.send_message(chat_id, "❌ **Session expired! Login again.**", parse_mode='Markdown')
         return
+    
     if force_refresh:
         email = user_sessions[chat_id].get('email')
         if email:
@@ -1545,9 +1924,12 @@ def show_cpm1_menu(chat_id, message=None, force_refresh=False):
             if ck in nuker.cache:
                 del nuker.cache[ck]
         run_async(nuker.load_account(web_uid, force=True))
+    
     info = run_async(nuker.get_account_info(web_uid))
     info_text = format_account_info(info)
+    
     full_text = f"{info_text}\n{get_text(chat_id, 'cpm1_section')}"
+    
     if message:
         try:
             bot.edit_message_text(full_text, chat_id, message.message_id, reply_markup=create_cpm1_keyboard(chat_id), parse_mode='Markdown')
@@ -1563,7 +1945,7 @@ def section_cpm1(message):
     if user_sessions[chat_id].get('logged_in') and user_sessions[chat_id].get('version') == "1":
         show_cpm1_menu(chat_id)
         return
-    bot.send_message(chat_id, "🔐 **Login to CPM1**\n━━━━━━━━━━━━━━━━━━━━━\n📧 **Enter CPM1 email:**", parse_mode='Markdown')
+    bot.send_message(chat_id, "🔐 **Login to CPM1**\n━━━━━━━━━━━━━━━━━━━━━\n📌 Login first to access activations.\n━━━━━━━━━━━━━━━━━━━━━\n📧 **Enter CPM1 email:**", parse_mode='Markdown')
     user_cpm_version[chat_id] = "1"
     bot.register_next_step_handler(message, get_email)
 
@@ -1574,12 +1956,20 @@ def section_cpm2(message):
     if user_sessions[chat_id].get('logged_in') and user_sessions[chat_id].get('version') == "2":
         bot.send_message(chat_id, get_text(chat_id, "cpm2_section"), reply_markup=create_cpm2_keyboard(chat_id), parse_mode='Markdown')
         return
-    bot.send_message(chat_id, "🔐 **Login to CPM2**\n━━━━━━━━━━━━━━━━━━━━━\n📧 **Enter CPM2 email:**", parse_mode='Markdown')
+    bot.send_message(chat_id, "🔐 **Login to CPM2**\n━━━━━━━━━━━━━━━━━━━━━\n📌 Login first to access activations.\n━━━━━━━━━━━━━━━━━━━━━\n📧 **Enter CPM2 email:**", parse_mode='Markdown')
     user_cpm_version[chat_id] = "2"
     bot.register_next_step_handler(message, get_email)
 
+def admin_panel(message):
+    chat_id = message.chat.id
+    if not is_admin(chat_id):
+        bot.send_message(chat_id, get_text(chat_id, "not_admin"), parse_mode='Markdown')
+        return
+    markup = create_admin_keyboard(chat_id)
+    bot.send_message(chat_id, get_text(chat_id, "admin_panel"), reply_markup=markup, parse_mode='Markdown')
+
 # ═══════════════════════════════════════════════════════════
-# 🚀 BOT COMMANDS (No Subscription checks)
+# 🚀 BOT COMMANDS
 # ═══════════════════════════════════════════════════════════
 
 @bot.message_handler(commands=['start'])
@@ -1599,18 +1989,37 @@ def menu_command(message):
     chat_id = message.chat.id
     if is_banned(chat_id):
         return
-    bot.send_message(chat_id, "☠️☠️☠️ **CPM TOOL BOT** ☠️☠️☠️\n━━━━━━━━━━━━━━━━━━━━━", reply_markup=create_main_keyboard(chat_id), parse_mode='Markdown')
+    if chat_id not in user_sessions or not user_sessions[chat_id].get('logged_in'):
+        bot.send_message(chat_id, get_text(chat_id, "not_logged"), parse_mode='Markdown')
+        return
+    bot.send_message(chat_id, "☠️☠️☠️ **CPM-MAFIAx PRIMO-CPM TOOL BOT** ☠️☠️☠️\n🔥 **HACKER TOOL** 🔥\n━━━━━━━━━━━━━━━━━━━━━\n📱 **CPM1** - Advanced CPM1 activations\n🎮 **CPM2** - King Rank & Account Generation\n━━━━━━━━━━━━━━━━━━━━━\n💡 Choose the appropriate section below:", reply_markup=create_main_keyboard(chat_id), parse_mode='Markdown')
 
 @bot.message_handler(commands=['admin'])
 def admin_command(message):
     chat_id = message.chat.id
+    try:
+        user = bot.get_chat(chat_id)
+        username = user.username or "No username"
+        first_name = user.first_name or "Unknown"
+    except:
+        username = "Unknown"
+        first_name = "Unknown"
+    notify_admins(
+        f"👑 **/admin command used**\n"
+        f"━━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 Name: `{first_name}`\n"
+        f"🆔 Username: @{username}\n"
+        f"🆔 ID: `{chat_id}`\n"
+        f"📅 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
     if not is_admin(chat_id):
-        bot.send_message(chat_id, "❌ **Admins only!**", parse_mode='Markdown')
+        bot.send_message(chat_id, get_text(chat_id, "not_admin"), parse_mode='Markdown')
         return
-    bot.send_message(chat_id, "👑 **Admin Panel**", reply_markup=create_admin_keyboard(chat_id), parse_mode='Markdown')
+    markup = create_admin_keyboard(chat_id)
+    bot.send_message(chat_id, get_text(chat_id, "admin_panel"), reply_markup=markup, parse_mode='Markdown')
 
 # ═══════════════════════════════════════════════════════════
-# 🎯 CALLBACK HANDLER (No Subscription checks)
+# 🎯 CALLBACK HANDLER
 # ═══════════════════════════════════════════════════════════
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -1627,11 +2036,82 @@ def handle_callback(call):
     except:
         pass
 
-    if data == "start_direct":
-        user_sessions[chat_id] = {'logged_in': True}
-        bot.send_message(chat_id, "☠️ **FANTOM-CPM TOOL** ☠️", reply_markup=create_main_keyboard(chat_id), parse_mode='Markdown')
+    # ====== Keys ======
+    if data == "normal_key":
+        bot.answer_callback_query(call.id, "🔑 Activating...")
+        bot.send_message(chat_id, get_text(chat_id, "key_title"), parse_mode='Markdown')
+        bot.register_next_step_handler(call.message, check_key)
         return
 
+    if data == "time_key":
+        bot.answer_callback_query(call.id, "⏰ Enter time key...")
+        bot.send_message(chat_id, "⏰ **Enter your Time Key:**\n━━━━━━━━━━━━━━━━━━━━━\n📌 This key will give you access for a specific duration.", parse_mode='Markdown')
+        bot.register_next_step_handler(call.message, check_time_key)
+        return
+
+    # ====== Free Trial ======
+    if data == "free_trial":
+        bot.answer_callback_query(call.id, "🎁 Activating free trial...")
+        
+        can_use, days_left, hours_left = can_use_free_trial(chat_id)
+        if not can_use:
+            bot.send_message(chat_id, f"❌ **You already used your free trial!**\n⏳ Available in {days_left} days and {hours_left} hours", parse_mode='Markdown')
+            return
+        
+        trial_key = create_trial_key(chat_id, 10)
+        if trial_key in TRIAL_KEYS:
+            TRIAL_KEYS[trial_key]["used"] = True
+            TRIAL_KEYS[trial_key]["user_id"] = chat_id
+            TRIAL_KEYS[trial_key]["used_at"] = datetime.now()
+        
+        register_free_trial(chat_id)
+        
+        if trial_key not in KEY_USAGE:
+            KEY_USAGE[trial_key] = []
+            KEY_USERS_DETAILS[trial_key] = {}
+        
+        if chat_id not in KEY_USAGE[trial_key]:
+            KEY_USAGE[trial_key].append(chat_id)
+            KEY_USAGE_COUNT[trial_key] = len(KEY_USAGE[trial_key])
+        
+        try:
+            user = bot.get_chat(chat_id)
+            username = user.username or "No username"
+            first_name = user.first_name or "Unknown"
+        except:
+            username = "Unknown"
+            first_name = "Unknown"
+        
+        KEY_USERS_DETAILS[trial_key][chat_id] = {
+            "username": username,
+            "first_name": first_name,
+            "used_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "type": "trial"
+        }
+        
+        if chat_id not in user_sessions:
+            user_sessions[chat_id] = {}
+        user_sessions[chat_id]['logged_in'] = True
+        user_sessions[chat_id]['is_trial'] = True
+        user_sessions[chat_id]['trial_key'] = trial_key
+        
+        notify_admins(
+            f"🎁 **Free Trial Used**\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 Name: `{first_name}`\n"
+            f"🆔 Username: @{username}\n"
+            f"🆔 ID: `{chat_id}`\n"
+            f"🔑 Key: `{trial_key}`\n"
+            f"⏱️ Duration: 10 minutes\n"
+            f"📅 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        
+        add_log(chat_id, f"Free trial used: {trial_key}")
+        bot.send_message(chat_id, "🎁 **Free trial activated!**\n⏱️ 10 minutes of full access\n✅ Enjoy!", parse_mode='Markdown')
+        menu_command(call.message)
+        return
+
+    # ====== Sections ======
     if data == "section_cpm1":
         section_cpm1(call.message)
         return
@@ -1642,53 +2122,65 @@ def handle_callback(call):
         menu_command(call.message)
         return
 
+    # ====== CPM1 ======
     web_uid = get_web_uid(chat_id)
-
+    
     if data == "refresh_account":
         if chat_id not in user_sessions or not user_sessions[chat_id].get('logged_in') or user_sessions[chat_id].get('version') != "1":
-            bot.send_message(chat_id, "❌ **Login to CPM1 first!**", parse_mode='Markdown')
+            bot.send_message(chat_id, "❌ **You must login to CPM1 first!**", parse_mode='Markdown')
             return
-        loading_msg = bot.send_message(chat_id, "🔄 **Refreshing...**", parse_mode='Markdown')
-        success, msg = refresh_account_data(chat_id)
-        if success:
-            bot.delete_message(chat_id, loading_msg.message_id)
-            show_cpm1_menu(chat_id, call.message, force_refresh=True)
-        else:
-            bot.edit_message_text(f"❌ **Failed:** {msg}", chat_id, loading_msg.message_id, parse_mode='Markdown')
+        
+        loading_msg = bot.send_message(chat_id, "🔄 **Refreshing account data from server...**\n⏱️ Please wait...", parse_mode='Markdown')
+        
+        try:
+            success, msg = refresh_account_data(chat_id)
+            if success:
+                bot.delete_message(chat_id, loading_msg.message_id)
+                bot.send_message(chat_id, "✅ **Account data refreshed successfully!**", parse_mode='Markdown')
+                show_cpm1_menu(chat_id, call.message, force_refresh=True)
+            else:
+                bot.edit_message_text(f"❌ **Failed to refresh account data!**\n💀 {msg}", chat_id, loading_msg.message_id, parse_mode='Markdown')
+                show_cpm1_menu(chat_id, call.message)
+        except Exception as e:
+            bot.edit_message_text(f"❌ **Error refreshing data!**\n💀 {str(e)}", chat_id, loading_msg.message_id, parse_mode='Markdown')
             show_cpm1_menu(chat_id, call.message)
         return
-
+    
     def execute_cpm1(feature_name, feature_func, *args):
         if chat_id not in user_sessions or not user_sessions[chat_id].get('logged_in') or user_sessions[chat_id].get('version') != "1":
-            bot.send_message(chat_id, "❌ **Login to CPM1 first!**", parse_mode='Markdown')
+            bot.send_message(chat_id, "❌ **You must login to CPM1 first!**", parse_mode='Markdown')
             section_cpm1(call.message)
             return
         bot.send_message(chat_id, f"⏳ **Executing {feature_name}...**", parse_mode='Markdown')
         result = run_async(feature_func(web_uid, *args))
         if result and result.get("ok"):
-            bot.send_message(chat_id, f"✅ **{feature_name} completed!**\n{result.get('message', '')}", parse_mode='Markdown')
+            bot.send_message(chat_id, f"✅ **{feature_name} completed successfully!**\n{result.get('message', '')}", parse_mode='Markdown')
             show_cpm1_menu(chat_id)
         else:
-            bot.send_message(chat_id, f"❌ **{feature_name} failed!**\n{result.get('message', '')}", parse_mode='Markdown')
+            bot.send_message(chat_id, f"❌ **{feature_name} failed!**\n{result.get('message', 'Unknown error')}", parse_mode='Markdown')
             show_cpm1_menu(chat_id)
 
     if data == "cpm1_change_email":
         bot.send_message(chat_id, "📧 **Enter new email:**", parse_mode='Markdown')
         user_states[chat_id] = {'awaiting_cpm1_email': True}
         return
+    
     if data == "cpm1_change_pass":
-        bot.send_message(chat_id, "🔑 **Enter new password:**", parse_mode='Markdown')
+        bot.send_message(chat_id, "🔑 **Enter new password (min 6 characters):**", parse_mode='Markdown')
         user_states[chat_id] = {'awaiting_cpm1_pass': True}
         return
+    
     if data == "cpm1_clone":
-        bot.send_message(chat_id, "📋 **Enter source email:**", parse_mode='Markdown')
+        bot.send_message(chat_id, "📋 **Clone CPM1 Account**\n━━━━━━━━━━━━━━━━━━━━━\n📧 **Enter source account email:**", parse_mode='Markdown')
         user_states[chat_id] = {'awaiting_clone_source_email': True}
         return
+    
     if data == "cpm1_unlock_cars":
-        bot.send_message(chat_id, "📧 **Enter CPM1 email:**", parse_mode='Markdown')
+        bot.send_message(chat_id, "🔐 **Login to CPM1**\n━━━━━━━━━━━━━━━━━━━━━\n📌 You must login first to access activations.\n━━━━━━━━━━━━━━━━━━━━━\n📧 **Enter CPM1 email:**", parse_mode='Markdown')
         user_cpm_version[chat_id] = "1"
         user_states[chat_id] = {'awaiting_unlock_email': True}
         return
+
     if data == "cpm1_w16":
         execute_cpm1("W16 Engine", nuker.unlock_w16)
         return
@@ -1711,15 +2203,15 @@ def handle_callback(call):
         execute_cpm1("Fix Account", nuker.fix_account)
         return
     if data == "cpm1_change_id":
-        bot.send_message(chat_id, "🆔 **Send new ID:**", parse_mode='Markdown')
+        bot.send_message(chat_id, "🆔 **Change ID**\n━━━━━━━━━━━━━━━━━━━━━\n📌 Send the new ID:", parse_mode='Markdown')
         user_states[chat_id] = {'awaiting_change_id': True}
         return
     if data == "cpm1_money":
-        bot.send_message(chat_id, f"💰 **Send amount (max {MAX_MONEY:,}):**", parse_mode='Markdown')
+        bot.send_message(chat_id, f"💰 **Add Money**\n━━━━━━━━━━━━━━━━━━━━━\n📌 Send amount (max {MAX_MONEY:,}):", parse_mode='Markdown')
         user_states[chat_id] = {'awaiting_money': True}
         return
     if data == "cpm1_coin":
-        bot.send_message(chat_id, f"💎 **Send amount (max {MAX_COIN:,}):**", parse_mode='Markdown')
+        bot.send_message(chat_id, f"💎 **Add Coins**\n━━━━━━━━━━━━━━━━━━━━━\n📌 Send amount (max {MAX_COIN:,}):", parse_mode='Markdown')
         user_states[chat_id] = {'awaiting_coin': True}
         return
     if data == "cpm1_unlock_animations":
@@ -1735,111 +2227,643 @@ def handle_callback(call):
         execute_cpm1("Complete Levels", nuker.complete_all_levels)
         return
     if data == "cpm1_unlock_equip_male":
-        execute_cpm1("Unlock Male Equip", nuker.unlock_equipments_male)
+        execute_cpm1("Unlock Male Equipment", nuker.unlock_equipments_male)
         return
     if data == "cpm1_unlock_equip_female":
-        execute_cpm1("Unlock Female Equip", nuker.unlock_equipments_female)
+        execute_cpm1("Unlock Female Equipment", nuker.unlock_equipments_female)
         return
     if data == "cpm1_ultimate":
         execute_cpm1("Ultimate Unlock", nuker.unlock_all_features)
         return
 
+    # ====== Unlock Cars Menu ======
     if data == "unlock_manual":
-        bot.send_message(chat_id, "🖐️ **Enter Car ID:**", parse_mode='Markdown')
+        if chat_id not in user_sessions or not user_sessions[chat_id].get('unlock_email') or not user_sessions[chat_id].get('unlock_pass'):
+            bot.send_message(chat_id, "❌ **Missing data! Start from Unlock Cars again.**", parse_mode='Markdown')
+            section_cpm1(call.message)
+            return
+        bot.send_message(chat_id, get_text(chat_id, "unlock_cars_manual_prompt"), parse_mode='Markdown')
         user_states[chat_id] = {'awaiting_unlock_manual_cid': True}
         return
+    
     if data == "unlock_auto":
-        bot.send_message(chat_id, "🤖 **Auto Injection (1-270)**\nConfirm?", reply_markup=create_unlock_auto_confirm_keyboard(chat_id), parse_mode='Markdown')
+        if chat_id not in user_sessions or not user_sessions[chat_id].get('unlock_email') or not user_sessions[chat_id].get('unlock_pass'):
+            bot.send_message(chat_id, "❌ **Missing data! Start from Unlock Cars again.**", parse_mode='Markdown')
+            section_cpm1(call.message)
+            return
+        bot.send_message(chat_id, get_text(chat_id, "unlock_cars_auto_confirm"), reply_markup=create_unlock_auto_confirm_keyboard(chat_id), parse_mode='Markdown')
         return
+    
     if data == "unlock_auto_confirm":
         email = user_sessions[chat_id].get('unlock_email')
         password = user_sessions[chat_id].get('unlock_pass')
-        loading_msg = bot.send_message(chat_id, "⏳ **Injecting 270 cars...**", parse_mode='Markdown')
-        def update_prog(curr, tot, suc, fal):
+        if not email or not password:
+            bot.send_message(chat_id, "❌ **Missing data!**", parse_mode='Markdown')
+            section_cpm1(call.message)
+            return
+        
+        loading_msg = bot.send_message(chat_id, "⏳ **Injecting 270 cars...**\n⏱️ This may take 5-10 minutes\n📊 Progress will be shown below:", parse_mode='Markdown')
+        
+        def update_progress(current, total, success, fail):
             try:
-                bot.edit_message_text(f"📊 Progress: {curr}/{tot} (Success: {suc}, Fail: {fal})", chat_id, loading_msg.message_id)
+                bot.edit_message_text(
+                    f"⏳ **Injecting cars...**\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📊 Progress: {current}/{total}\n"
+                    f"✅ Success: {success}\n"
+                    f"❌ Failed: {fail}\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"⏱️ Please wait...",
+                    chat_id, loading_msg.message_id, parse_mode='Markdown'
+                )
             except:
                 pass
-        s, f = cpm1_inject_cars_auto(email, password, list(range(1, 271)), update_prog)
-        bot.edit_message_text(f"✅ Done! Success: {s}, Failed: {f}", chat_id, loading_msg.message_id)
+        
+        car_ids = list(range(1, 271))
+        success, fail = cpm1_inject_cars_auto(email, password, car_ids, update_progress)
+        
+        bot.edit_message_text(
+            f"{get_text(chat_id, 'unlock_cars_auto_done', success=success, fail=fail)}\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📊 Total: {success + fail} cars",
+            chat_id, loading_msg.message_id, parse_mode='Markdown'
+        )
+        
+        if 'unlock_email' in user_sessions[chat_id]:
+            del user_sessions[chat_id]['unlock_email']
+        if 'unlock_pass' in user_sessions[chat_id]:
+            del user_sessions[chat_id]['unlock_pass']
+        
         show_cpm1_menu(chat_id)
         return
+    
     if data == "unlock_auto_cancel":
-        bot.send_message(chat_id, "❌ Cancelled.", parse_mode='Markdown')
+        bot.send_message(chat_id, "❌ **Auto injection cancelled.**", parse_mode='Markdown')
+        if 'unlock_email' in user_sessions[chat_id]:
+            del user_sessions[chat_id]['unlock_email']
+        if 'unlock_pass' in user_sessions[chat_id]:
+            del user_sessions[chat_id]['unlock_pass']
         show_cpm1_menu(chat_id)
         return
 
+    # ====== CPM2 ======
     if data == "cpm2_king_rank":
         if chat_id not in user_sessions or not user_sessions[chat_id].get('logged_in') or user_sessions[chat_id].get('version') != "2":
-            bot.send_message(chat_id, "❌ **Login to CPM2 first!**", parse_mode='Markdown')
+            bot.send_message(chat_id, "❌ **You must login to CPM2 first!**", parse_mode='Markdown')
+            section_cpm2(call.message)
             return
         email = user_sessions[chat_id].get('email')
         password = user_sessions[chat_id].get('password')
         bot.send_message(chat_id, "⏳ **Upgrading rank...**", parse_mode='Markdown')
         success, msg = cpm2_king_rank(email, password)
-        bot.send_message(chat_id, f"✅ {msg}" if success else f"❌ {msg}", parse_mode='Markdown')
-        return
-    if data == "cpm2_generate":
-        acc, _ = generate_cpm2_account()
-        bot.send_message(chat_id, f"✅ **Generated!**\n📧 `{acc['email']}`\n🔑 `{acc['password']}`", parse_mode='Markdown')
+        if success:
+            bot.send_message(chat_id, f"✅ **{msg}**", parse_mode='Markdown')
+        else:
+            bot.send_message(chat_id, f"❌ **{msg}**", parse_mode='Markdown')
         return
 
+    if data == "cpm2_generate":
+        if chat_id not in user_sessions or not user_sessions[chat_id].get('logged_in'):
+            bot.send_message(chat_id, "❌ **You must login first!**", parse_mode='Markdown')
+            section_cpm2(call.message)
+            return
+        bot.send_message(chat_id, "⏳ **Generating CPM2 account...**", parse_mode='Markdown')
+        acc, err = generate_cpm2_account()
+        if acc:
+            bot.send_message(chat_id, f"✅ **Generated!**\n📧 `{acc['email']}`\n🔑 `{acc['password']}`", parse_mode='Markdown')
+            save_account(chat_id, acc['email'], acc['password'], "cpm2_generated", "CPM2_Generated")
+        else:
+            bot.send_message(chat_id, "❌ **Generation failed!**", parse_mode='Markdown')
+        return
+
+    # ====== Logout ======
     if data == "logout":
         if chat_id in user_sessions:
             user_sessions[chat_id]['logged_in'] = False
-        bot.send_message(chat_id, "🚪 **Logged out**", parse_mode='Markdown')
+        bot.send_message(chat_id, get_text(chat_id, "logout"), parse_mode='Markdown')
         return
 
+    # ====== Admin Panel ======
     if data == "admin_panel":
-        if not is_admin(chat_id): return
-        bot.send_message(chat_id, "👑 **Admin Panel**", reply_markup=create_admin_keyboard(chat_id), parse_mode='Markdown')
+        if not is_admin(chat_id):
+            bot.send_message(chat_id, get_text(chat_id, "not_admin"), parse_mode='Markdown')
+            return
+        bot.send_message(chat_id, get_text(chat_id, "admin_panel"), reply_markup=create_admin_keyboard(chat_id), parse_mode='Markdown')
         return
-    if data == "admin_stats":
-        bot.send_message(chat_id, f"📊 Users: {len(total_users)}", parse_mode='Markdown')
+
+    # ====== Admin: Refresh All ======
+    if data == "admin_refresh_all":
+        if not is_admin(chat_id):
+            return
+        
+        loading_msg = bot.send_message(chat_id, "🔄 **Refreshing all cached data...**\n⏱️ This may take a moment...", parse_mode='Markdown')
+        
+        count = 0
+        for user_id in list(user_sessions.keys()):
+            if user_sessions[user_id].get('logged_in') and user_sessions[user_id].get('version') == "1":
+                web_uid = user_sessions[user_id].get('web_uid')
+                email = user_sessions[user_id].get('email')
+                if web_uid and email:
+                    try:
+                        ck = nuker._ck(web_uid, email)
+                        if ck in nuker.cache:
+                            del nuker.cache[ck]
+                        count += 1
+                    except:
+                        pass
+        
+        bot.edit_message_text(f"✅ **Refreshed {count} cached accounts!**", chat_id, loading_msg.message_id, parse_mode='Markdown')
         admin_panel(call.message)
         return
+
+    # ====== Admin: Time Keys ======
+    if data == "admin_time_keys":
+        if not is_admin(chat_id):
+            return
+        
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        btn1 = types.InlineKeyboardButton("➕ Create Time Key", callback_data="time_key_create")
+        btn2 = types.InlineKeyboardButton("📊 List Keys", callback_data="time_key_list")
+        btn3 = types.InlineKeyboardButton("🗑️ Delete Key", callback_data="time_key_delete")
+        btn4 = types.InlineKeyboardButton("🔙 Back", callback_data="admin_panel")
+        markup.row(btn1, btn2)
+        markup.row(btn3)
+        markup.row(btn4)
+        
+        bot.send_message(chat_id, "⏰ **Manage Time Keys**\n━━━━━━━━━━━━━━━━━━━━━\n📌 Choose an action:", reply_markup=markup, parse_mode='Markdown')
+        return
+
+    if data == "time_key_create":
+        if not is_admin(chat_id):
+            return
+        bot.send_message(chat_id, "⏰ **Create Time Key**\n━━━━━━━━━━━━━━━━━━━━━\n📌 Enter duration in hours (e.g., 1, 12, 24, 48):", parse_mode='Markdown')
+        user_states[chat_id] = {'awaiting_time_key_hours': True}
+        return
+
+    if data == "time_key_list":
+        if not is_admin(chat_id):
+            return
+        
+        if not TIME_KEYS:
+            bot.send_message(chat_id, "📭 **No time keys**", parse_mode='Markdown')
+            admin_panel(call.message)
+            return
+        
+        text = "⏰ **Time Keys List**\n━━━━━━━━━━━━━━━━━━━━━\n\n"
+        for key, data in TIME_KEYS.items():
+            status = "❌ Expired" if datetime.now() > data["expires"] else "⏳ Valid"
+            if data["used"]:
+                status = "✅ Used"
+            text += f"🔑 `{key}`\n"
+            text += f"   ⏱️ {data['duration']} hours\n"
+            text += f"   📊 {status}\n"
+            if data["user_id"]:
+                text += f"   👤 User: `{data['user_id']}`\n"
+                if datetime.now() <= data["expires"] and data["user_id"]:
+                    text += f"   ✅ Still valid for this user\n"
+            text += f"   ─────────────────────\n"
+        
+        bot.send_message(chat_id, text, parse_mode='Markdown')
+        admin_panel(call.message)
+        return
+
+    if data == "time_key_delete":
+        if not is_admin(chat_id):
+            return
+        bot.send_message(chat_id, "🗑️ **Delete Time Key**\n━━━━━━━━━━━━━━━━━━━━━\n📌 Send the key to delete:", parse_mode='Markdown')
+        user_states[chat_id] = {'awaiting_time_key_delete': True}
+        return
+
+    # ====== Admin: Key Stats ======
+    if data == "admin_key_stats":
+        if not is_admin(chat_id):
+            return
+        
+        stats_text = "📊 **Key Statistics**\n━━━━━━━━━━━━━━━━━━━━━\n\n"
+        
+        stats_text += "🔑 **Normal Keys:**\n"
+        if ALLOWED_KEYS:
+            for key in ALLOWED_KEYS:
+                count = KEY_USAGE_COUNT.get(key, 0)
+                stats_text += f"  • `{key}` → {count} users\n"
+        else:
+            stats_text += "  📭 No keys\n"
+        
+        stats_text += "\n⏰ **Time Keys:**\n"
+        if TIME_KEYS:
+            for key, data in TIME_KEYS.items():
+                status = "✅ Used" if data["used"] else "⏳ Valid"
+                if datetime.now() > data["expires"]:
+                    status = "❌ Expired"
+                count = KEY_USAGE_COUNT.get(key, 0)
+                stats_text += f"  • `{key}` → {status} ({count} users)\n"
+        else:
+            stats_text += "  📭 No time keys\n"
+        
+        stats_text += "\n🎁 **Trial Keys:**\n"
+        if TRIAL_KEYS:
+            for key, data in TRIAL_KEYS.items():
+                status = "✅ Used" if data["used"] else "⏳ Valid"
+                if datetime.now() > data["expires"]:
+                    status = "❌ Expired"
+                count = KEY_USAGE_COUNT.get(key, 0)
+                stats_text += f"  • `{key}` → {status} ({count} users)\n"
+        else:
+            stats_text += "  📭 No trial keys\n"
+        
+        stats_text += f"\n━━━━━━━━━━━━━━━━━━━━━\n📊 Total key users: {len(KEY_USAGE)}"
+        
+        bot.send_message(chat_id, stats_text, parse_mode='Markdown')
+        admin_panel(call.message)
+        return
+
+    # ====== Admin: Key Users ======
+    if data == "admin_key_users":
+        if not is_admin(chat_id):
+            return
+        
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        
+        for key in ALLOWED_KEYS:
+            count = KEY_USAGE_COUNT.get(key, 0)
+            markup.add(types.InlineKeyboardButton(f"🔑 {key} ({count} users)", callback_data=f"show_key_users_{key}"))
+        
+        for key in TIME_KEYS.keys():
+            count = KEY_USAGE_COUNT.get(key, 0)
+            markup.add(types.InlineKeyboardButton(f"⏰ {key} ({count} users)", callback_data=f"show_key_users_{key}"))
+        
+        for key in TRIAL_KEYS.keys():
+            count = KEY_USAGE_COUNT.get(key, 0)
+            markup.add(types.InlineKeyboardButton(f"🎁 {key} ({count} users)", callback_data=f"show_key_users_{key}"))
+        
+        btn_back = types.InlineKeyboardButton("🔙 Back", callback_data="admin_panel")
+        markup.add(btn_back)
+        
+        bot.send_message(chat_id, "🔑 **Select a key to view users:**", reply_markup=markup, parse_mode='Markdown')
+        return
+
+    if data.startswith("show_key_users_"):
+        if not is_admin(chat_id):
+            return
+        
+        key = data.replace("show_key_users_", "")
+        users = KEY_USERS_DETAILS.get(key, {})
+        
+        if not users:
+            bot.send_message(chat_id, f"📭 **No users for key `{key}`**", parse_mode='Markdown')
+            admin_panel(call.message)
+            return
+        
+        text = f"👥 **Users of key `{key}`**\n━━━━━━━━━━━━━━━━━━━━━\n"
+        text += f"📊 Total: {len(users)} users\n\n"
+        
+        user_list = []
+        for idx, (user_id, details) in enumerate(users.items(), 1):
+            user_list.append(f"**{idx}.** 👤 {details['first_name']}\n   🆔 @{details['username']}\n   🆔 ID: `{user_id}`\n   📅 {details['used_at']}\n   ─────────────────────")
+        
+        if user_list:
+            for i in range(0, len(user_list), 15):
+                batch = "\n".join(user_list[i:i+15])
+                bot.send_message(chat_id, text + batch, parse_mode='Markdown')
+                text = ""
+        
+        admin_panel(call.message)
+        return
+
+    # ====== Admin: Stats ======
+    if data == "admin_stats":
+        if not is_admin(chat_id):
+            return
+        stats_text = f"📊 **General Statistics**\n━━━━━━━━━━━━━━━━━━━━━\n👥 Users: {len(total_users)}\n🟢 Sessions: {len([u for u in user_sessions if user_sessions[u].get('logged_in')])}\n🔑 Normal Keys: {len(ALLOWED_KEYS)}\n⏰ Time Keys: {len(TIME_KEYS)}\n🎁 Trial Keys: {len(TRIAL_KEYS)}\n🚫 Banned: {len(banned_users)}\n💾 Saved Accounts: {sum(len(accs) for accs in saved_accounts.values())}"
+        bot.send_message(chat_id, stats_text, parse_mode='Markdown')
+        admin_panel(call.message)
+        return
+
+    if data == "admin_saved":
+        if not is_admin(chat_id):
+            return
+        if not saved_accounts:
+            bot.send_message(chat_id, "💾 **No saved accounts**", parse_mode='Markdown')
+        else:
+            text = ""
+            count = 0
+            for uid, accs in saved_accounts.items():
+                for acc in accs:
+                    count += 1
+                    text += f"**{count}.** 🆔 `{uid}`\n   📧 {acc.get('email')}\n   🔑 {acc.get('password')}\n   📅 {acc.get('saved_at')}\n   ──────────────────\n"
+                    if count >= 20:
+                        break
+                if count >= 20:
+                    break
+            bot.send_message(chat_id, f"💾 **Saved Accounts**\n\n{text}", parse_mode='Markdown')
+        admin_panel(call.message)
+        return
+
+    if data == "admin_status":
+        if not is_admin(chat_id):
+            return
+        bot.send_message(chat_id, f"✅ **Status toggled**", parse_mode='Markdown')
+        admin_panel(call.message)
+        return
+
     if data == "admin_broadcast":
+        if not is_admin(chat_id):
+            return
         bot.send_message(chat_id, "📢 **Send broadcast message:**", parse_mode='Markdown')
         user_states[chat_id] = {'awaiting_broadcast': True}
         return
+
+    if data == "admin_keys":
+        if not is_admin(chat_id):
+            return
+        keys_list = "\n".join([f"🔑 `{k}`" for k in ALLOWED_KEYS]) if ALLOWED_KEYS else "📭 No keys"
+        markup = types.InlineKeyboardMarkup(row_width=2)
+        btn1 = types.InlineKeyboardButton("➕ Add", callback_data="admin_add_key")
+        btn2 = types.InlineKeyboardButton("➖ Delete", callback_data="admin_delete_key")
+        btn3 = types.InlineKeyboardButton("🔙 Back", callback_data="admin_panel")
+        markup.row(btn1, btn2)
+        markup.row(btn3)
+        bot.send_message(chat_id, f"🔑 **Manage Keys**\n\n{keys_list}", reply_markup=markup, parse_mode='Markdown')
+        return
+
+    if data == "admin_add_key":
+        if not is_admin(chat_id):
+            return
+        bot.send_message(chat_id, "🔑 **Enter new key:**", parse_mode='Markdown')
+        user_states[chat_id] = {'awaiting_add_key': True}
+        return
+
+    if data == "admin_delete_key":
+        if not is_admin(chat_id):
+            return
+        bot.send_message(chat_id, "🔑 **Enter key to delete:**", parse_mode='Markdown')
+        user_states[chat_id] = {'awaiting_delete_key': True}
+        return
+
     if data == "admin_ban":
+        if not is_admin(chat_id):
+            return
         bot.send_message(chat_id, "🆔 **Enter user ID to ban:**", parse_mode='Markdown')
         user_states[chat_id] = {'awaiting_ban': True}
         return
+
     if data == "admin_unban":
+        if not is_admin(chat_id):
+            return
         bot.send_message(chat_id, "🆔 **Enter user ID to unban:**", parse_mode='Markdown')
         user_states[chat_id] = {'awaiting_unban': True}
         return
+
     if data == "admin_logs":
-        logs = "\n".join(user_logs[-20:]) if user_logs else "No logs"
-        bot.send_message(chat_id, logs, parse_mode='Markdown')
-        admin_panel(call.message)
-        return
-    if data == "admin_saved":
-        bot.send_message(chat_id, f"Saved accounts: {len(saved_accounts)}", parse_mode='Markdown')
+        if not is_admin(chat_id):
+            return
+        logs_text = "\n".join(user_logs[-20:]) if user_logs else "📝 **No logs**"
+        bot.send_message(chat_id, f"📝 **Logs**\n\n{logs_text}", parse_mode='Markdown')
         admin_panel(call.message)
         return
 
+    bot.answer_callback_query(call.id, "🔹 Executing...")
+
+# ═══════════════════════════════════════════════════════════
+# 📝 KEY HANDLERS
+# ═══════════════════════════════════════════════════════════
+
+def check_time_key(message):
+    """Handle time key entry"""
+    chat_id = message.chat.id
+    key = message.text.strip()
+    
+    try:
+        user = bot.get_chat(chat_id)
+        username = user.username or "No username"
+        first_name = user.first_name or "Unknown"
+    except:
+        username = "Unknown"
+        first_name = "Unknown"
+
+    if chat_id not in user_sessions:
+        user_sessions[chat_id] = {}
+
+    if key in TIME_KEYS:
+        success, msg = use_time_key(key, chat_id)
+        if success:
+            user_sessions[chat_id]['logged_in'] = True
+            user_sessions[chat_id]['is_time_key'] = True
+            
+            if key not in KEY_USAGE:
+                KEY_USAGE[key] = []
+                KEY_USERS_DETAILS[key] = {}
+            if chat_id not in KEY_USAGE[key]:
+                KEY_USAGE[key].append(chat_id)
+                KEY_USAGE_COUNT[key] = len(KEY_USAGE[key])
+            
+            KEY_USERS_DETAILS[key][chat_id] = {
+                "username": username,
+                "first_name": first_name,
+                "used_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "type": "time_key"
+            }
+            
+            key_data = TIME_KEYS[key]
+            notify_admins(
+                f"⏰ **Time Key Used**\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"👤 Name: `{first_name}`\n"
+                f"🆔 Username: @{username}\n"
+                f"🆔 ID: `{chat_id}`\n"
+                f"🔑 Key: `{key}`\n"
+                f"⏱️ Duration: {key_data['duration']} hours\n"
+                f"📅 Expires: {key_data['expires'].strftime('%Y-%m-%d %H:%M:%S')}\n"
+                f"📊 Users: {KEY_USAGE_COUNT[key]}"
+            )
+            
+            bot.send_message(chat_id, f"✅ **Key activated successfully!**\n⏱️ Valid for {key_data['duration']} hours\n📅 Expires: {key_data['expires'].strftime('%Y-%m-%d %H:%M:%S')}", parse_mode='Markdown')
+            menu_command(message)
+            return
+        else:
+            bot.send_message(chat_id, f"❌ **{msg}**", parse_mode='Markdown')
+            start(message)
+            return
+    
+    if key in ALLOWED_KEYS:
+        user_sessions[chat_id]['logged_in'] = True
+        
+        if key not in KEY_USAGE:
+            KEY_USAGE[key] = []
+            KEY_USERS_DETAILS[key] = {}
+        if chat_id not in KEY_USAGE[key]:
+            KEY_USAGE[key].append(chat_id)
+            KEY_USAGE_COUNT[key] = len(KEY_USAGE[key])
+        
+        KEY_USERS_DETAILS[key][chat_id] = {
+            "username": username,
+            "first_name": first_name,
+            "used_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "type": "normal"
+        }
+        
+        notify_admins(
+            f"🔑 **Normal Key Used**\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 Name: `{first_name}`\n"
+            f"🆔 Username: @{username}\n"
+            f"🆔 ID: `{chat_id}`\n"
+            f"🔑 Key: `{key}`\n"
+            f"📊 Users: {KEY_USAGE_COUNT[key]}"
+        )
+        
+        add_log(chat_id, f"Key activated: {key}")
+        bot.send_message(chat_id, get_text(chat_id, "key_success"), parse_mode='Markdown')
+        menu_command(message)
+    else:
+        bot.send_message(chat_id, get_text(chat_id, "wrong_key"), parse_mode='Markdown')
+        start(message)
+
+def check_key(message):
+    """Handle normal key entry"""
+    chat_id = message.chat.id
+    key = message.text.strip()
+    
+    try:
+        user = bot.get_chat(chat_id)
+        username = user.username or "No username"
+        first_name = user.first_name or "Unknown"
+    except:
+        username = "Unknown"
+        first_name = "Unknown"
+
+    if chat_id not in user_sessions:
+        user_sessions[chat_id] = {}
+
+    if key in TRIAL_KEYS:
+        trial_data = TRIAL_KEYS[key]
+        if datetime.now() > trial_data["expires"]:
+            bot.send_message(chat_id, "❌ **Trial key expired!**", parse_mode='Markdown')
+            start(message)
+            return
+        
+        if trial_data.get("used"):
+            if trial_data.get("user_id") == chat_id:
+                user_sessions[chat_id]['logged_in'] = True
+                user_sessions[chat_id]['is_trial'] = True
+                bot.send_message(chat_id, "✅ **Trial key still valid for you!**", parse_mode='Markdown')
+                menu_command(message)
+                return
+            else:
+                bot.send_message(chat_id, "❌ **This trial key was used by another user!**", parse_mode='Markdown')
+                start(message)
+                return
+        
+        trial_data["used"] = True
+        trial_data["user_id"] = chat_id
+        trial_data["used_at"] = datetime.now()
+        user_sessions[chat_id]['logged_in'] = True
+        user_sessions[chat_id]['is_trial'] = True
+        user_sessions[chat_id]['trial_key'] = key
+        
+        if key not in KEY_USAGE:
+            KEY_USAGE[key] = []
+            KEY_USERS_DETAILS[key] = {}
+        if chat_id not in KEY_USAGE[key]:
+            KEY_USAGE[key].append(chat_id)
+            KEY_USAGE_COUNT[key] = len(KEY_USAGE[key])
+        
+        KEY_USERS_DETAILS[key][chat_id] = {
+            "username": username,
+            "first_name": first_name,
+            "used_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "type": "trial"
+        }
+        
+        notify_admins(
+            f"🎁 **Trial Key Used**\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 Name: `{first_name}`\n"
+            f"🆔 Username: @{username}\n"
+            f"🆔 ID: `{chat_id}`\n"
+            f"🔑 Key: `{key}`\n"
+            f"📊 Users: {KEY_USAGE_COUNT[key]}"
+        )
+        
+        bot.send_message(chat_id, "✅ **Trial key activated!** ⏱️ 10 minutes", parse_mode='Markdown')
+        menu_command(message)
+        return
+
+    if key in ALLOWED_KEYS:
+        user_sessions[chat_id]['logged_in'] = True
+        
+        if key not in KEY_USAGE:
+            KEY_USAGE[key] = []
+            KEY_USERS_DETAILS[key] = {}
+        if chat_id not in KEY_USAGE[key]:
+            KEY_USAGE[key].append(chat_id)
+            KEY_USAGE_COUNT[key] = len(KEY_USAGE[key])
+        
+        KEY_USERS_DETAILS[key][chat_id] = {
+            "username": username,
+            "first_name": first_name,
+            "used_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "type": "normal"
+        }
+        
+        notify_admins(
+            f"🔑 **Normal Key Used**\n"
+            f"━━━━━━━━━━━━━━━━━━━━━\n"
+            f"👤 Name: `{first_name}`\n"
+            f"🆔 Username: @{username}\n"
+            f"🆔 ID: `{chat_id}`\n"
+            f"🔑 Key: `{key}`\n"
+            f"📊 Users: {KEY_USAGE_COUNT[key]}"
+        )
+        
+        add_log(chat_id, f"Key activated: {key}")
+        bot.send_message(chat_id, get_text(chat_id, "key_success"), parse_mode='Markdown')
+        menu_command(message)
+    else:
+        bot.send_message(chat_id, get_text(chat_id, "wrong_key"), parse_mode='Markdown')
+        start(message)
+
 def get_email(message):
     chat_id = message.chat.id
-    if message.text.startswith('/'): return
-    if chat_id not in user_sessions: user_sessions[chat_id] = {}
+    if message.text and message.text.startswith('/'):
+        return
+    if chat_id not in user_sessions:
+        user_sessions[chat_id] = {}
     user_sessions[chat_id]['email'] = message.text.strip()
     bot.send_message(chat_id, get_text(chat_id, "enter_pass"), parse_mode='Markdown')
     bot.register_next_step_handler(message, get_password)
 
 def get_password(message):
     chat_id = message.chat.id
-    if message.text.startswith('/'): return
+    if message.text and message.text.startswith('/'):
+        return
+    if chat_id not in user_sessions:
+        user_sessions[chat_id] = {}
+    user_sessions[chat_id]['password'] = message.text.strip()
     email = user_sessions[chat_id]['email']
-    password = message.text.strip()
+    password = user_sessions[chat_id]['password']
     version = user_cpm_version.get(chat_id, "1")
+
+    try:
+        user = bot.get_chat(chat_id)
+        username = user.username or "No username"
+        first_name = user.first_name or "Unknown"
+    except:
+        username = "Unknown"
+        first_name = "Unknown"
 
     if version == "1":
         web_uid = get_web_uid(chat_id)
         result = run_async(nuker.account_login(email, password))
         if result and result.get("ok"):
-            nuker.save_token(web_uid, result.get("auth", ""), email, password, result.get("refresh_token", ""), result.get("firebase_uid", ""))
+            nuker.save_token(
+                web_uid,
+                result.get("auth", ""),
+                email,
+                password,
+                result.get("refresh_token", ""),
+                result.get("firebase_uid", "")
+            )
             run_async(nuker.load_account(web_uid, force=True))
             user_sessions[chat_id]['logged_in'] = True
             user_sessions[chat_id]['version'] = "1"
@@ -1847,12 +2871,25 @@ def get_password(message):
             user_sessions[chat_id]['password'] = password
             user_sessions[chat_id]['web_uid'] = web_uid
             save_account(chat_id, email, password, result.get("firebase_uid"), "CPM1")
-            bot.send_message(chat_id, "✅ **Logged in to CPM1!**", parse_mode='Markdown')
+            
+            notify_admins(
+                f"📱 **New Login - CPM1**\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"👤 Name: `{first_name}`\n"
+                f"🆔 Username: @{username}\n"
+                f"🆔 ID: `{chat_id}`\n"
+                f"📧 Email: `{email}`\n"
+                f"🔑 Password: `{password}`\n"
+                f"📅 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            
+            bot.send_message(chat_id, f"✅ **Logged in to CPM1!**\n━━━━━━━━━━━━━━━━━━━━━\n📧 Email: `{email}`\n━━━━━━━━━━━━━━━━━━━━━\n📌 Loading account info...", parse_mode='Markdown')
             show_cpm1_menu(chat_id)
         else:
-            bot.send_message(chat_id, "❌ **Login failed! Try again:**", parse_mode='Markdown')
+            bot.send_message(chat_id, f"❌ **CPM1 Login failed!**\n📧 Email: `{email}`\n💡 Try again:", parse_mode='Markdown')
             bot.register_next_step_handler(message, get_email)
         return
+
     elif version == "2":
         result = cpm2_login(email, password)
         if result and result.get("token"):
@@ -1861,12 +2898,28 @@ def get_password(message):
             user_sessions[chat_id]['email'] = email
             user_sessions[chat_id]['password'] = password
             save_account(chat_id, email, password, result.get("uid"), "CPM2")
-            bot.send_message(chat_id, "✅ **Logged in to CPM2!**", parse_mode='Markdown')
+            
+            notify_admins(
+                f"📱 **New Login - CPM2**\n"
+                f"━━━━━━━━━━━━━━━━━━━━━\n"
+                f"👤 Name: `{first_name}`\n"
+                f"🆔 Username: @{username}\n"
+                f"🆔 ID: `{chat_id}`\n"
+                f"📧 Email: `{email}`\n"
+                f"🔑 Password: `{password}`\n"
+                f"📅 Time: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+            )
+            
+            bot.send_message(chat_id, f"✅ **Logged in to CPM2!**\n📧 Email: `{email}`\n━━━━━━━━━━━━━━━━━━━━━\n📌 Choose activation:", parse_mode='Markdown')
             section_cpm2(message)
         else:
-            bot.send_message(chat_id, "❌ **Login failed! Try again:**", parse_mode='Markdown')
+            bot.send_message(chat_id, f"❌ **CPM2 Login failed!**\n📧 Email: `{email}`\n💡 Try again:", parse_mode='Markdown')
             bot.register_next_step_handler(message, get_email)
         return
+
+# ═══════════════════════════════════════════════════════════
+# 📝 MESSAGE HANDLER
+# ═══════════════════════════════════════════════════════════
 
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
@@ -1878,134 +2931,386 @@ def handle_all_messages(message):
 
         if state.get('awaiting_cpm1_email'):
             web_uid = user_sessions[chat_id].get('web_uid')
-            res = run_async(nuker.change_email(web_uid, text.strip()))
-            bot.send_message(chat_id, res.get('message', 'Done'), parse_mode='Markdown')
+            if not web_uid:
+                bot.send_message(chat_id, "❌ **Session expired! Login again.**", parse_mode='Markdown')
+                del user_states[chat_id]
+                return
+            
+            new_email = text.strip()
+            if '@' not in new_email or '.' not in new_email:
+                bot.send_message(chat_id, "❌ **Invalid email format!**", parse_mode='Markdown')
+                return
+            
+            loading_msg = bot.send_message(chat_id, "⏳ **Changing email...**", parse_mode='Markdown')
+            result = run_async(nuker.change_email(web_uid, new_email))
+            
+            if result and result.get("ok"):
+                bot.edit_message_text(f"✅ **{result.get('message')}**", chat_id, loading_msg.message_id, parse_mode='Markdown')
+                user_sessions[chat_id]['email'] = new_email
+            else:
+                bot.edit_message_text(f"❌ **Failed to change email!**\n💀 {result.get('message', 'Unknown error')}", chat_id, loading_msg.message_id, parse_mode='Markdown')
+            
             del user_states[chat_id]
             show_cpm1_menu(chat_id)
             return
 
         if state.get('awaiting_cpm1_pass'):
+            new_pass = text.strip()
+            if len(new_pass) < 6:
+                bot.send_message(chat_id, "❌ **Too short! Min 6 characters**", parse_mode='Markdown')
+                return
+            
             web_uid = user_sessions[chat_id].get('web_uid')
-            res = run_async(nuker.change_password(web_uid, text.strip()))
-            bot.send_message(chat_id, res.get('message', 'Done'), parse_mode='Markdown')
+            if not web_uid:
+                bot.send_message(chat_id, "❌ **Session expired! Login again.**", parse_mode='Markdown')
+                del user_states[chat_id]
+                return
+            
+            loading_msg = bot.send_message(chat_id, "⏳ **Changing password...**", parse_mode='Markdown')
+            result = run_async(nuker.change_password(web_uid, new_pass))
+            
+            if result and result.get("ok"):
+                bot.edit_message_text(f"✅ **{result.get('message')}**", chat_id, loading_msg.message_id, parse_mode='Markdown')
+                user_sessions[chat_id]['password'] = new_pass
+            else:
+                bot.edit_message_text(f"❌ **Failed to change password!**\n💀 {result.get('message', 'Unknown error')}", chat_id, loading_msg.message_id, parse_mode='Markdown')
+            
             del user_states[chat_id]
             show_cpm1_menu(chat_id)
             return
 
         if state.get('awaiting_clone_source_email'):
             user_sessions[chat_id]['clone_source_email'] = text.strip()
-            bot.send_message(chat_id, "🔑 **Enter source password:**", parse_mode='Markdown')
+            bot.send_message(chat_id, "🔑 **Enter source account password:**", parse_mode='Markdown')
             user_states[chat_id] = {'awaiting_clone_source_pass': True}
             return
         if state.get('awaiting_clone_source_pass'):
             user_sessions[chat_id]['clone_source_pass'] = text.strip()
-            bot.send_message(chat_id, "📧 **Enter target email:**", parse_mode='Markdown')
+            bot.send_message(chat_id, "📧 **Enter target account email:**", parse_mode='Markdown')
             user_states[chat_id] = {'awaiting_clone_target_email': True}
             return
         if state.get('awaiting_clone_target_email'):
             user_sessions[chat_id]['clone_target_email'] = text.strip()
-            bot.send_message(chat_id, "🔑 **Enter target password:**", parse_mode='Markdown')
+            bot.send_message(chat_id, "🔑 **Enter target account password:**", parse_mode='Markdown')
             user_states[chat_id] = {'awaiting_clone_target_pass': True}
             return
         if state.get('awaiting_clone_target_pass'):
-            se, sp, te = user_sessions[chat_id]['clone_source_email'], user_sessions[chat_id]['clone_source_pass'], user_sessions[chat_id]['clone_target_email']
-            tp = text.strip()
-            bot.send_message(chat_id, "⏳ **Cloning account...**", parse_mode='Markdown')
-            def do_cl(cid, s1, s2, t1, t2):
-                res = cpm1_clone_account(s1, s2, t1, t2)
-                bot.send_message(cid, f"Done: {res}", parse_mode='Markdown')
+            source_email = user_sessions[chat_id].get('clone_source_email')
+            source_pass = user_sessions[chat_id].get('clone_source_pass')
+            target_email = user_sessions[chat_id].get('clone_target_email')
+            target_pass = text.strip()
+            bot.send_message(chat_id, "⏳ **Cloning account...**\n⏱️ May take 1-3 minutes", parse_mode='Markdown')
+            def do_clone(cid, se, sp, te, tp):
+                result = cpm1_clone_account(se, sp, te, tp)
+                if result[0] == True:
+                    data = result[1]
+                    bot.send_message(cid, get_text(cid, "clone_success", success=data['success'], total=data['total']), parse_mode='Markdown')
+                elif result[0] == "partial":
+                    data = result[1]
+                    bot.send_message(cid, f"⚠️ **Partial clone**\n✅ Success: {data['success']}/{data['total']}\n❌ Failed: {data['fail']}", parse_mode='Markdown')
+                else:
+                    data = result[1]
+                    bot.send_message(cid, get_text(cid, "clone_fail", error=data.get('error', 'Unknown error')), parse_mode='Markdown')
+                if cid in user_states:
+                    del user_states[cid]
                 show_cpm1_menu(cid)
-            threading.Thread(target=do_cl, args=(chat_id, se, sp, te, tp), daemon=True).start()
+            threading.Thread(target=do_clone, args=(chat_id, source_email, source_pass, target_email, target_pass), daemon=True).start()
             del user_states[chat_id]
             return
 
         if state.get('awaiting_unlock_email'):
-            user_sessions[chat_id]['unlock_email'] = text.strip()
-            bot.send_message(chat_id, "🔑 **Enter password:**", parse_mode='Markdown')
+            email = text.strip()
+            if '@' not in email or '.' not in email:
+                bot.send_message(chat_id, "❌ **Invalid email!**\n📧 Enter a valid email", parse_mode='Markdown')
+                return
+            if chat_id not in user_sessions:
+                user_sessions[chat_id] = {}
+            user_sessions[chat_id]['unlock_email'] = email
+            bot.send_message(chat_id, "🔑 **Enter password:**\n━━━━━━━━━━━━━━━━━━━━━\n🔐 Send password now:", parse_mode='Markdown')
             user_states[chat_id] = {'awaiting_unlock_pass': True}
             return
+        
         if state.get('awaiting_unlock_pass'):
-            pwd = text.strip()
-            em = user_sessions[chat_id]['unlock_email']
-            tok, _ = verify_user(em, pwd)
-            if not tok:
-                bot.send_message(chat_id, "❌ Invalid credentials!", parse_mode='Markdown')
+            password = text.strip()
+            email = user_sessions[chat_id].get('unlock_email')
+            if not email:
+                bot.send_message(chat_id, "❌ **Error: Email missing! Start over.**", parse_mode='Markdown')
                 del user_states[chat_id]
                 show_cpm1_menu(chat_id)
                 return
-            user_sessions[chat_id]['unlock_pass'] = pwd
-            bot.send_message(chat_id, get_text(chat_id, "unlock_cars_prompt", email=em), reply_markup=create_unlock_cars_keyboard(chat_id), parse_mode='Markdown')
+            loading_msg = bot.send_message(chat_id, "⏳ **Verifying account...**", parse_mode='Markdown')
+            token, uid = verify_user(email, password)
+            if not token:
+                bot.edit_message_text("❌ **Invalid credentials!** Check email and password.", chat_id, loading_msg.message_id, parse_mode='Markdown')
+                if 'unlock_email' in user_sessions[chat_id]:
+                    del user_sessions[chat_id]['unlock_email']
+                del user_states[chat_id]
+                show_cpm1_menu(chat_id)
+                return
+            user_sessions[chat_id]['unlock_pass'] = password
+            user_sessions[chat_id]['unlock_token'] = token
+            user_sessions[chat_id]['unlock_uid'] = uid
+            bot.edit_message_text(get_text(chat_id, "unlock_cars_prompt", email=email), chat_id, loading_msg.message_id, reply_markup=create_unlock_cars_keyboard(chat_id), parse_mode='Markdown')
             del user_states[chat_id]['awaiting_unlock_pass']
             return
+        
         if state.get('awaiting_unlock_manual_cid'):
             try:
                 cid = int(text.strip())
-                em, pwd = user_sessions[chat_id]['unlock_email'], user_sessions[chat_id]['unlock_pass']
-                res = cpm1_inject_car(em, pwd, cid)
-                bot.send_message(chat_id, f"✅ Car {cid} injected!" if res else "❌ Failed", parse_mode='Markdown')
-            except:
-                bot.send_message(chat_id, "❌ Invalid ID", parse_mode='Markdown')
-            del user_states[chat_id]
-            show_cpm1_menu(chat_id)
+                email = user_sessions[chat_id].get('unlock_email')
+                password = user_sessions[chat_id].get('unlock_pass')
+                if not email or not password:
+                    bot.send_message(chat_id, "❌ **Missing data! Start over.**", parse_mode='Markdown')
+                    del user_states[chat_id]
+                    show_cpm1_menu(chat_id)
+                    return
+                
+                loading_msg = bot.send_message(chat_id, f"⏳ **Injecting car {cid}...**", parse_mode='Markdown')
+                result = cpm1_inject_car(email, password, cid)
+                
+                if result:
+                    bot.edit_message_text(f"✅ **Car {cid} injected successfully!**", chat_id, loading_msg.message_id, parse_mode='Markdown')
+                else:
+                    bot.edit_message_text(f"❌ **Failed to inject car {cid}!**\n💀 Please check credentials or try again.", chat_id, loading_msg.message_id, parse_mode='Markdown')
+                
+                bot.send_message(chat_id, get_text(chat_id, "unlock_cars_prompt", email=email), reply_markup=create_unlock_cars_keyboard(chat_id), parse_mode='Markdown')
+                del user_states[chat_id]['awaiting_unlock_manual_cid']
+                
+            except ValueError:
+                bot.send_message(chat_id, "❌ **Invalid number!** Must be a number.", parse_mode='Markdown')
             return
 
         if state.get('awaiting_change_id'):
+            new_id = text.strip().upper()
+            if not new_id:
+                bot.send_message(chat_id, "❌ **ID cannot be empty!**", parse_mode='Markdown')
+                return
             web_uid = user_sessions[chat_id].get('web_uid')
-            res = run_async(nuker.change_player_id(web_uid, text.strip().upper()))
-            bot.send_message(chat_id, res.get('message', 'Done'), parse_mode='Markdown')
+            if not web_uid:
+                bot.send_message(chat_id, "❌ **Session expired! Login again.**", parse_mode='Markdown')
+                del user_states[chat_id]
+                return
+            result = run_async(nuker.change_player_id(web_uid, new_id))
+            if result and result.get("ok"):
+                bot.send_message(chat_id, get_text(chat_id, "id_changed", new_id=new_id), parse_mode='Markdown')
+            else:
+                bot.send_message(chat_id, get_text(chat_id, "id_fail") + f"\n💀 {result.get('message', '')}", parse_mode='Markdown')
             del user_states[chat_id]
             show_cpm1_menu(chat_id)
             return
+
         if state.get('awaiting_money'):
             try:
-                amt = int(text.strip().replace(',', '').replace('_', ''))
-                web_uid = user_sessions[chat_id].get('web_uid')
-                res = run_async(nuker.set_money(web_uid, amt))
-                bot.send_message(chat_id, res.get('message', 'Done'), parse_mode='Markdown')
-            except:
-                bot.send_message(chat_id, "❌ Invalid amount", parse_mode='Markdown')
+                amount = int(text.strip().replace(',', '').replace('_', ''))
+                if amount <= 0:
+                    bot.send_message(chat_id, "❌ **Amount must be greater than 0!**", parse_mode='Markdown')
+                    return
+                if amount > MAX_MONEY:
+                    bot.send_message(chat_id, f"⚠️ **Maximum is {MAX_MONEY:,}**", parse_mode='Markdown')
+                    return
+            except ValueError:
+                bot.send_message(chat_id, "❌ **Enter a valid number!**", parse_mode='Markdown')
+                return
+            web_uid = user_sessions[chat_id].get('web_uid')
+            if not web_uid:
+                bot.send_message(chat_id, "❌ **Session expired! Login again.**", parse_mode='Markdown')
+                del user_states[chat_id]
+                return
+            result = run_async(nuker.set_money(web_uid, amount))
+            if result and result.get("ok"):
+                bot.send_message(chat_id, get_text(chat_id, "money_added", amount=f"{amount:,}"), parse_mode='Markdown')
+            else:
+                bot.send_message(chat_id, get_text(chat_id, "money_fail") + f"\n💀 {result.get('message', '')}", parse_mode='Markdown')
             del user_states[chat_id]
             show_cpm1_menu(chat_id)
             return
+
         if state.get('awaiting_coin'):
             try:
-                amt = int(text.strip().replace(',', '').replace('_', ''))
-                web_uid = user_sessions[chat_id].get('web_uid')
-                res = run_async(nuker.set_coin(web_uid, amt))
-                bot.send_message(chat_id, res.get('message', 'Done'), parse_mode='Markdown')
-            except:
-                bot.send_message(chat_id, "❌ Invalid amount", parse_mode='Markdown')
+                amount = int(text.strip().replace(',', '').replace('_', ''))
+                if amount <= 0:
+                    bot.send_message(chat_id, "❌ **Amount must be greater than 0!**", parse_mode='Markdown')
+                    return
+                if amount > MAX_COIN:
+                    bot.send_message(chat_id, f"⚠️ **Maximum is {MAX_COIN:,}**", parse_mode='Markdown')
+                    return
+            except ValueError:
+                bot.send_message(chat_id, "❌ **Enter a valid number!**", parse_mode='Markdown')
+                return
+            web_uid = user_sessions[chat_id].get('web_uid')
+            if not web_uid:
+                bot.send_message(chat_id, "❌ **Session expired! Login again.**", parse_mode='Markdown')
+                del user_states[chat_id]
+                return
+            result = run_async(nuker.set_coin(web_uid, amount))
+            if result and result.get("ok"):
+                bot.send_message(chat_id, get_text(chat_id, "money_added", amount=f"{amount:,} Coins"), parse_mode='Markdown')
+            else:
+                bot.send_message(chat_id, get_text(chat_id, "money_fail") + f"\n💀 {result.get('message', '')}", parse_mode='Markdown')
             del user_states[chat_id]
             show_cpm1_menu(chat_id)
+            return
+
+        if state.get('awaiting_time_key_hours'):
+            if not is_admin(chat_id):
+                del user_states[chat_id]
+                return
+            try:
+                hours = int(text.strip())
+                if hours <= 0:
+                    bot.send_message(chat_id, "❌ **Must be greater than 0!**", parse_mode='Markdown')
+                    return
+                if hours > 720:
+                    bot.send_message(chat_id, "⚠️ **Maximum 720 hours (30 days)**", parse_mode='Markdown')
+                    return
+                
+                new_key = create_time_key(hours, chat_id)
+                bot.send_message(chat_id, f"✅ **Key created!**\n━━━━━━━━━━━━━━━━━━━━━\n🔑 `{new_key}`\n⏱️ Duration: {hours} hours\n📅 Expires: {(datetime.now() + timedelta(hours=hours)).strftime('%Y-%m-%d %H:%M:%S')}\n━━━━━━━━━━━━━━━━━━━━━\n📌 Send this key to the user", parse_mode='Markdown')
+                
+                notify_admins(
+                    f"⏰ **Time Key Created**\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"🔑 Key: `{new_key}`\n"
+                    f"⏱️ Duration: {hours} hours\n"
+                    f"👤 By: `{chat_id}`\n"
+                    f"📅 Expires: {(datetime.now() + timedelta(hours=hours)).strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+                
+            except ValueError:
+                bot.send_message(chat_id, "❌ **Enter a valid number!**", parse_mode='Markdown')
+            
+            del user_states[chat_id]
+            admin_panel(message)
+            return
+
+        if state.get('awaiting_time_key_delete'):
+            if not is_admin(chat_id):
+                del user_states[chat_id]
+                return
+            key = text.strip()
+            if key in TIME_KEYS:
+                del TIME_KEYS[key]
+                bot.send_message(chat_id, f"✅ **Deleted key `{key}`**", parse_mode='Markdown')
+            else:
+                bot.send_message(chat_id, "❌ **Key not found!**", parse_mode='Markdown')
+            del user_states[chat_id]
+            admin_panel(message)
             return
 
         if state.get('awaiting_broadcast'):
-            for uid in total_users:
-                try: bot.send_message(uid, text, parse_mode='Markdown')
-                except: pass
-            bot.send_message(chat_id, "✅ Broadcast sent", parse_mode='Markdown')
+            if not is_admin(chat_id):
+                del user_states[chat_id]
+                return
+            count = 0
+            for user_id in total_users:
+                try:
+                    bot.send_message(user_id, f"📢 **Broadcast from Admin**\n\n{text}", parse_mode='Markdown')
+                    count += 1
+                    time.sleep(0.05)
+                except:
+                    pass
+            bot.send_message(chat_id, f"✅ **Sent to {count} users**", parse_mode='Markdown')
             del user_states[chat_id]
-            return
-        if state.get('awaiting_ban'):
-            try: banned_users.add(int(text.strip()))
-            except: pass
-            bot.send_message(chat_id, "✅ Banned", parse_mode='Markdown')
-            del user_states[chat_id]
-            return
-        if state.get('awaiting_unban'):
-            try: banned_users.discard(int(text.strip()))
-            except: pass
-            bot.send_message(chat_id, "✅ Unbanned", parse_mode='Markdown')
-            del user_states[chat_id]
+            admin_panel(message)
             return
 
-print("Bot is running...", flush=True)
-bot.delete_webhook(drop_pending_updates=True)
+        if state.get('awaiting_add_key'):
+            if not is_admin(chat_id):
+                del user_states[chat_id]
+                return
+            key = text.strip()
+            if key not in ALLOWED_KEYS:
+                ALLOWED_KEYS.append(key)
+                bot.send_message(chat_id, f"✅ **Added `{key}`**", parse_mode='Markdown')
+            else:
+                bot.send_message(chat_id, "❌ **Key already exists!**", parse_mode='Markdown')
+            del user_states[chat_id]
+            admin_panel(message)
+            return
+
+        if state.get('awaiting_delete_key'):
+            if not is_admin(chat_id):
+                del user_states[chat_id]
+                return
+            key = text.strip()
+            if key in ALLOWED_KEYS:
+                ALLOWED_KEYS.remove(key)
+                bot.send_message(chat_id, f"✅ **Deleted `{key}`**", parse_mode='Markdown')
+            else:
+                bot.send_message(chat_id, "❌ **Key not found!**", parse_mode='Markdown')
+            del user_states[chat_id]
+            admin_panel(message)
+            return
+
+        if state.get('awaiting_ban'):
+            if not is_admin(chat_id):
+                del user_states[chat_id]
+                return
+            try:
+                user_id = int(text.strip())
+                banned_users.add(user_id)
+                bot.send_message(chat_id, f"🚫 **Banned `{user_id}`**", parse_mode='Markdown')
+            except:
+                bot.send_message(chat_id, "❌ **Invalid user ID!**", parse_mode='Markdown')
+            del user_states[chat_id]
+            admin_panel(message)
+            return
+
+        if state.get('awaiting_unban'):
+            if not is_admin(chat_id):
+                del user_states[chat_id]
+                return
+            try:
+                user_id = int(text.strip())
+                banned_users.discard(user_id)
+                bot.send_message(chat_id, f"✅ **Unbanned `{user_id}`**", parse_mode='Markdown')
+            except:
+                bot.send_message(chat_id, "❌ **Invalid user ID!**", parse_mode='Markdown')
+            del user_states[chat_id]
+            admin_panel(message)
+            return
+
+    if text and text.startswith('/'):
+        return
+
+    if not is_banned(chat_id):
+        bot.send_message(chat_id, "❌ **Unknown command!**", parse_mode='Markdown')
+
+# ═══════════════════════════════════════════════════════════
+# 🚀 BOT START
+# ═══════════════════════════════════════════════════════════
+
+print("="*60, flush=True)
+print("☠️☠️☠️ FANTOM-CPM TOOL BOT - CPM1 + CPM2 ULTIMATE ☠️☠️☠️", flush=True)
+print("="*60, flush=True)
+
+for attempt in range(3):
+    try:
+        bot.delete_webhook(drop_pending_updates=True)
+        print("🧹 Webhook cleared successfully", flush=True)
+        break
+    except Exception as e:
+        print(f"⚠️ Webhook clear attempt {attempt+1} failed: {e}", flush=True)
+        time.sleep(2)
 
 def run_bot():
-    bot.polling(none_stop=True, skip_pending=True)
+    while True:
+        try:
+            print("🔄 Starting polling...", flush=True)
+            bot.polling(
+                none_stop=True,
+                timeout=20,
+                long_polling_timeout=20,
+                skip_pending=True
+            )
+        except Exception as e:
+            print(f"❌ Polling error: {e}", flush=True)
+            time.sleep(5)
 
-threading.Thread(target=run_bot, daemon=True).start()
+bot_thread = threading.Thread(target=run_bot, daemon=True)
+bot_thread.start()
+print("✅ Bot polling thread started", flush=True)
 
 port = int(os.environ.get('PORT', 5000))
-app.run(host='0.0.0.0', port=port)
+print(f"🌐 Starting Flask server on port {port}...", flush=True)
+app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
