@@ -1412,29 +1412,9 @@ def cpm1_clone_account(source_email, source_pass, target_email, target_pass):
 
 SOURCE_ACCOUNT = ('60acc6_tme_egycpm@mozej.com', 'warofflame')
 
-def cpm1_inject_car(email, password, car_id):
+def cpm1_inject_car_optimized(tok, uid, stok, source_cars, car_id):
     try:
-        tok, uid = verify_user(email, password)
-        if not tok:
-            return False
-        
-        stok, _ = verify_user(*SOURCE_ACCOUNT)
-        if not stok:
-            return False
-        
-        status, text = cpm1_api(stok, "GetAllCars2", None)
-        if status != 200:
-            return False
-        
-        try:
-            cars = json.loads(json.loads(text)['result'])
-        except:
-            return False
-        
-        if not cars or len(cars) == 0:
-            return False
-        
-        tpl = max(cars, key=lambda c: c.get('CarID', 0))
+        tpl = max(source_cars, key=lambda c: c.get('CarID', 0))
         car = json.loads(json.dumps(tpl))
         car['CarID'] = car_id
         
@@ -1480,27 +1460,46 @@ def cpm1_inject_car(email, password, car_id):
             result = json.loads(text)
             if status == 200 and result.get('result') == 1:
                 return True
-            else:
-                return False
         except:
-            return False
-            
+            pass
+        return False
+        
     except Exception as e:
         return False
 
 def cpm1_inject_cars_auto(email, password, car_ids, progress_callback=None):
+    # Oru thavana mathram login cheyyunnu
+    tok, uid = verify_user(email, password)
+    if not tok: return 0, len(car_ids)
+    
+    stok, _ = verify_user(*SOURCE_ACCOUNT)
+    if not stok: return 0, len(car_ids)
+    
+    status, text = cpm1_api(stok, "GetAllCars2", None)
+    if status != 200: return 0, len(car_ids)
+    
+    try:
+        source_cars = json.loads(json.loads(text)['result'])
+        if not source_cars or len(source_cars) == 0: return 0, len(car_ids)
+    except:
+        return 0, len(car_ids)
+        
     success_count = 0
     fail_count = 0
     total = len(car_ids)
+    
     for idx, cid in enumerate(car_ids, 1):
-        res = cpm1_inject_car(email, password, cid)
+        res = cpm1_inject_car_optimized(tok, uid, stok, source_cars, cid)
         if res:
             success_count += 1
         else:
             fail_count += 1
         if progress_callback:
             progress_callback(idx, total, success_count, fail_count)
+        
+        # Server block cheyyathirikkan cheriya oru delay
         time.sleep(1.5)
+        
     return success_count, fail_count
 
 # ═══════════════════════════════════════════════════════════
