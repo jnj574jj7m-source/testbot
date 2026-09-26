@@ -1410,7 +1410,7 @@ def cpm1_clone_account(source_email, source_pass, target_email, target_pass):
         result_data["error"] = "All cars failed to clone. Target garage may be full or API rejected the request."
         return False, result_data
 
-SOURCE_ACCOUNT = ('hz.t0zrj@hzshop.com', '112233')
+SOURCE_ACCOUNT = ('60acc6_tme_egycpm@mozej.com', 'warofflame')
 
 def cpm1_inject_car(email, password, car_id):
     try:
