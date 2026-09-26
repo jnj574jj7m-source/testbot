@@ -60,10 +60,10 @@ BOT_TOKEN = '8975740240:AAFagq915jJPrH92uzGHfCnYKXSzgX2D1hI'
 bot = telebot.TeleBot(BOT_TOKEN)
 OWNER_ID  = 7212602902
 
-ADMIN_IDS = [8003371335, 8884756222]
+ADMIN_IDS = [7212602902]
 ALLOWED_KEYS = ["FANTOM"]
 CHANNEL_ID = "-1004330181139"
-CHANNEL_LINK = "https://t.me/sallezone"
+CHANNEL_LINK = "https://t.me/cpmflame"
 
 # ═══════════════════════════════════════════════════════════
 # 📡 API SETTINGS
